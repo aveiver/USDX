@@ -292,6 +292,10 @@ begin
   // here, since TextDescription/TextDescriptionLong were added first above.
   Text[2].Visible := false;
 
+  // Theme.Main.Statics[0] (MainStatic1, the winged-microphone logo icon) -
+  // no statics are added before LoadFromTheme, so it's Statics[0] here.
+  Statics[0].Visible := false;
+
   AddButton(Theme.Main.ButtonSolo);
   AddButton(Theme.Main.ButtonMulti);
   AddButton(Theme.Main.ButtonJukebox);
