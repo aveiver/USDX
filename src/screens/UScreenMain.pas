@@ -284,6 +284,7 @@ begin
  *}
   TextDescription     := AddText(Theme.Main.TextDescription);
   TextDescriptionLong := AddText(Theme.Main.TextDescriptionLong);
+  Text[TextDescriptionLong].Visible := false;
 
   LoadFromTheme(Theme.Main);
 
