@@ -94,6 +94,7 @@ type
     iTabsSlide,
     iSortingSlide,
     iShowScoresSlide,
+    iKaraokeModeSlide,
     iDebugSlide,
     iAVDelaySlide,
     iMicDelaySlide,
@@ -314,6 +315,7 @@ begin
   AddSelectSlide('SING_OPTIONS_GAME_TABS', Ini.Tabs, ITabsTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_SORTING', Ini.Sorting, ISortingTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_SHOWSCORES', Ini.ShowScores, IShowScoresTranslated);
+  AddSelectSlide('SING_OPTIONS_GAME_KARAOKEMODE', Ini.KaraokeMode, IKaraokeModeTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_DEBUG', Ini.Debug, IDebugTranslated);
   UpdateCalculatedSelectSlides(true);
 end;

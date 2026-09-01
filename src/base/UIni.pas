@@ -148,6 +148,7 @@ type
       Sorting:        integer;
       ShowScores:     integer;
       ShowWebScore:   integer;
+      KaraokeMode:    integer;
       Debug:          integer;
       AVDelay:        integer;
       MicDelay:       integer;
@@ -359,6 +360,8 @@ const
 
   IDebug:            array[0..1] of UTF8String  = ('Off', 'On');
 
+  IKaraokeMode:      array[0..1] of UTF8String  = ('Off', 'On');
+
   IMaxFramerate:     array[0..11] of UTF8String  = ('10', '20', '30', '40', '50', '60', '70', '80', '90', '100', '150', '200');
   IScreens:          array[0..1] of UTF8String  = ('1', '2');
   ISplit:            array[0..1] of UTF8String  = ('Off', 'On');
@@ -488,6 +491,8 @@ var
   IShowScoresTranslated:       array[0..2] of UTF8String  = ('Off', 'WhenExists', 'On');
 
   IDebugTranslated:            array[0..1] of UTF8String  = ('Off', 'On');
+
+  IKaraokeModeTranslated:      array[0..1] of UTF8String  = ('Off', 'On');
   IAVDelay:                    array of UTF8String;
   IMicDelay:                   array of UTF8String;
 
@@ -702,6 +707,9 @@ begin
 
   IDebugTranslated[0]                 := ULanguage.Language.Translate('OPTION_VALUE_OFF');
   IDebugTranslated[1]                 := ULanguage.Language.Translate('OPTION_VALUE_ON');
+
+  IKaraokeModeTranslated[0]           := ULanguage.Language.Translate('OPTION_VALUE_OFF');
+  IKaraokeModeTranslated[1]           := ULanguage.Language.Translate('OPTION_VALUE_ON');
 
   IFullScreenTranslated[0]            := ULanguage.Language.Translate('OPTION_VALUE_OFF');
   IFullScreenTranslated[1]            := ULanguage.Language.Translate('OPTION_VALUE_ON');
@@ -1561,6 +1569,9 @@ begin
   // Show Score
   ShowScores := ReadArrayIndex(IShowScores, IniFile, 'Game', 'ShowScores', IGNORE_INDEX, 'On');
 
+  // Karaoke Mode
+  KaraokeMode := ReadArrayIndex(IKaraokeMode, IniFile, 'Game', 'KaraokeMode', 0);
+
   AVDelay := IniFile.ReadInteger('Game', 'AVDelay', 0);
 
   MicDelay := IniFile.ReadInteger('Game', 'MicDelay', 140);
@@ -1879,6 +1890,9 @@ begin
 
     // Show Scores
     IniFile.WriteString('Game', 'ShowScores', IShowScores[ShowScores]);
+
+    // Karaoke Mode
+    IniFile.WriteString('Game', 'KaraokeMode', IKaraokeMode[KaraokeMode]);
 
     // Debug
     IniFile.WriteString('Game', 'Debug', IDebug[Debug]);

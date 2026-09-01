@@ -1349,6 +1349,14 @@ begin
   Settings.InputVisible := True;
   Settings.PlayerEnabled := high(Integer);
   Settings.SoundEnabled := True;
+
+  // Karaoke Mode: plain lyrics sing-along, no pitch guide or score HUD
+  if Boolean(Ini.KaraokeMode) then
+  begin
+    AllNotesVisible(false);
+    Settings.InputVisible := False;
+    Settings.ScoresVisible := False;
+  end;
 end;
 
 procedure TScreenSingController.AllNotesVisible(visible: boolean);
