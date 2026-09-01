@@ -1603,7 +1603,7 @@ begin
   AudioPlayback.Stop;
   AudioPlayback.SetSyncSource(nil);
 
-  if (ScreenSong.Mode = smNormal) and SungToEnd then
+  if (ScreenSong.Mode = smNormal) and SungToEnd and not Boolean(Ini.KaraokeMode) then
   begin
     SaveLocalScores;
 

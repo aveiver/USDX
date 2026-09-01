@@ -262,6 +262,7 @@ uses
   USong,
   USongs,
   UNote,
+  UIni,
   SysUtils;
 
 //-------------
@@ -949,6 +950,9 @@ begin
     begin
       if (ScreenSong.Mode = smPartyTournament) then
         Display.FadeTo(@ScreenPartyTournamentWin)
+      else if Boolean(Ini.KaraokeMode) then
+        // Karaoke Mode: skip the score reveal, back to the song list
+        Display.FadeTo(@ScreenSong)
       else
         Display.FadeTo(@ScreenScore);
     end;
