@@ -1356,6 +1356,7 @@ begin
     AllNotesVisible(false);
     Settings.InputVisible := False;
     Settings.ScoresVisible := False;
+    Settings.AvatarsVisible := False;
   end;
 end;
 
