@@ -1357,6 +1357,7 @@ begin
     Settings.InputVisible := False;
     Settings.ScoresVisible := False;
     Settings.AvatarsVisible := False;
+    Settings.OscilloscopeVisible := False;
   end;
 end;
 
