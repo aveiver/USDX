@@ -395,7 +395,11 @@ begin
     end else if (Key = 'playerenabled') and (lua_isTable(L, -1)) then
       ScreenSing.settings.PlayerEnabled := lua_toBinInt(L, -1)
     else if (Key = 'soundenabled') and (lua_isBoolean(L, -1)) then
-      ScreenSing.settings.SoundEnabled := lua_toBoolean(L, -1);
+      ScreenSing.settings.SoundEnabled := lua_toBoolean(L, -1)
+    else if (Key = 'scoresvisible') and (lua_isBoolean(L, -1)) then
+      ScreenSing.settings.ScoresVisible := lua_toBoolean(L, -1)
+    else if (Key = 'inputvisible') and (lua_isBoolean(L, -1)) then
+      ScreenSing.settings.InputVisible := lua_toBoolean(L, -1);
 
     // pop value from stack so key is on top
     lua_pop(L, 1);

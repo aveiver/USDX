@@ -1,0 +1,38 @@
+--[[
+ * Karaoke Mode - party mode plugin
+ *
+ * Hides the pitch guide, live input tracking and score HUD so songs play
+ * as a plain sing-along with lyrics on screen, rather than the usual
+ * note-hitting game.
+ *]]
+
+function plugin_init()
+  register('party mode: karaoke', '1.00', 'custom', '');
+
+  require('Usdx.Party')
+  require('Usdx.ScreenSing')
+
+  local Mode = {}
+
+  Mode.Name = 'Karaoke (No Scoring)'
+  Mode.CanNonParty = true;
+  Mode.CanParty = true;
+
+  Mode.BeforeSing = 'BeforeSing';
+
+  Usdx.Party.Register(Mode)
+
+  return true;
+end
+
+function BeforeSing()
+  local Settings = {};
+
+  Settings['NotesVisible'] = {};   -- hide the pitch guide bars
+  Settings['InputVisible'] = false; -- hide the live sung-note tracking
+  Settings['ScoresVisible'] = false; -- hide the score HUD
+
+  ScreenSing.SetSettings(Settings);
+
+  return true;
+end
