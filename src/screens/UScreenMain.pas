@@ -288,6 +288,10 @@ begin
 
   LoadFromTheme(Theme.Main);
 
+  // Theme.Main.Text[0] (MainText1, the "Karaoke" title) becomes Text[2]
+  // here, since TextDescription/TextDescriptionLong were added first above.
+  Text[2].Visible := false;
+
   AddButton(Theme.Main.ButtonSolo);
   AddButton(Theme.Main.ButtonMulti);
   AddButton(Theme.Main.ButtonJukebox);
