@@ -188,21 +188,8 @@ begin
             ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
         end;
 
-        //Party
-        if Interaction = 1 then
-        begin
-          if (Songs.SongList.Count >= 1) then
-          begin
-            Party.bPartyGame := true;
-
-            FadeTo(@ScreenPartyOptions, SoundLib.Start);
-          end
-          else //show error message, No Songs Loaded
-            ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
-        end;
-
         //Jukebox
-        if Interaction = 2 then
+        if Interaction = 1 then
         begin
           if (Songs.SongList.Count >= 1) then
           begin
@@ -212,36 +199,20 @@ begin
             ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
         end;
 
-        //Stats
-        if Interaction = 3 then
-        begin
-          FadeTo(@ScreenStatMain, SoundLib.Start);
-        end;
-
-        //Editor
-        if Interaction = 4 then
-        begin
-          {$IFDEF UseMIDIPort}
-          FadeTo(@ScreenEdit, SoundLib.Start);
-          {$ELSE}
-          ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_EDITOR'));
-          {$ENDIF}
-        end;
-
         //Options
-        if Interaction = 5 then
+        if Interaction = 2 then
         begin
           FadeTo(@ScreenOptions, SoundLib.Start);
         end;
 
         //About
-        if Interaction = 6 then
+        if Interaction = 3 then
         begin
           FadeTo(@ScreenAbout, SoundLib.Start);
         end;
 
         //Exit
-        if Interaction = 7 then
+        if Interaction = 4 then
         begin
           Result := false;
         end;
