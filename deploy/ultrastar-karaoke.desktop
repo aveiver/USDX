@@ -1,17 +1,12 @@
 [Desktop Entry]
 Version=1.0
-
-Name=UltraStar Karaoke
+Name=Karaoke
 Comment=Karaoke program that evaluates your performance
-
-Exec=/home/karaoke/usdx-build/ultrastardx
-TryExec=/home/karaoke/usdx-build/ultrastardx
-Path=/home/karaoke/usdx-build
 Icon=ultrastar-karaoke
-
+Exec=/home/karaoke/usdx-build/ultrastardx
+Path=/home/karaoke/usdx-build
 StartupNotify=false
 Terminal=false
-
 Type=Application
 Categories=Game;ArcadeGame;
 Keywords=game;karaoke;singing;song;microphone;sound;
