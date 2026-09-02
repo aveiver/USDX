@@ -318,6 +318,11 @@ begin
 
   LoadFromTheme(Theme.Options);
 
+  // Theme.Options.Text[1] (OptionsText2, static "Change settings" subheader)
+  // becomes Text[2] here: TextDescription was added first (index 0), then
+  // LoadFromTheme adds OptionsText1..5 starting at index 1.
+  Text[2].Visible := false;
+
   // Order is irrelevant to the represenatation, however InteractNext/Prev is not working with a different order // TODO: RattleSN4K3: allow InteractNext etc. work with themes having a different button layout
   AddButtonChecked(Theme.Options.ButtonGame, OPTIONS_DESC_INDEX_GAME,  ButtonGameIID);
   AddButtonChecked(Theme.Options.ButtonGraphics, OPTIONS_DESC_INDEX_GRAPHICS,  ButtonGraphicsIID);
