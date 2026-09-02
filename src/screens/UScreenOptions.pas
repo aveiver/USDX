@@ -314,6 +314,7 @@ begin
   inherited Create;
 
   TextDescription := AddText(Theme.Options.TextDescription);
+  Text[TextDescription].Visible := false;
 
   LoadFromTheme(Theme.Options);
 
