@@ -803,6 +803,10 @@ begin
 
   LoadFromTheme(Theme.Name);
 
+  // Theme.Name.Text[1] (NameText2, "SING_PLAYER_DESC" subheader) -> Text[1],
+  // since LoadFromTheme is the first thing populating Text[] here.
+  Text[1].Visible := false;
+
   Theme.Name.SelectPlayersCount.oneItemOnly := true;
   Theme.Name.SelectPlayersCount.showArrows := true;
   PlayersCount := AddSelectSlide(Theme.Name.SelectPlayersCount, CountIndex, IPlayers);

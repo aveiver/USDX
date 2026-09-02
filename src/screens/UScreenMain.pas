@@ -297,10 +297,7 @@ begin
   Statics[0].Visible := false;
 
   AddButton(Theme.Main.ButtonSolo);
-  AddButton(Theme.Main.ButtonMulti);
   AddButton(Theme.Main.ButtonJukebox);
-  AddButton(Theme.Main.ButtonStat);
-  AddButton(Theme.Main.ButtonEditor);
   AddButton(Theme.Main.ButtonOptions);
   AddButton(Theme.Main.ButtonAbout);
   AddButton(Theme.Main.ButtonExit);

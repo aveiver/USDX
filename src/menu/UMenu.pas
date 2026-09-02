@@ -2115,7 +2115,7 @@ begin
   // Add Description and WhereAmI texts (customized per subclass)
   ThemeText := Theme.OptionsSub.TextDescription;
   ThemeText.Text := Description;
-  AddText(ThemeText);
+  Text[AddText(ThemeText)].Visible := false;
   ThemeText := Theme.OptionsSub.TextWhereAmI;
   ThemeText.Text := WhereAmI;
   AddText(ThemeText);
