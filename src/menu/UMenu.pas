@@ -2109,13 +2109,15 @@ var
   MenuHeight: integer;
   ThemeText: TThemeText;
   ThemeButtonBack: TThemeButton;
+  DescriptionTextIdx: integer;
 begin
   LoadFromTheme(Theme.OptionsSub);
   LoadLegend;
   // Add Description and WhereAmI texts (customized per subclass)
   ThemeText := Theme.OptionsSub.TextDescription;
   ThemeText.Text := Description;
-  Text[AddText(ThemeText)].Visible := false;
+  DescriptionTextIdx := AddText(ThemeText);
+  Text[DescriptionTextIdx].Visible := false;
   ThemeText := Theme.OptionsSub.TextWhereAmI;
   ThemeText.Text := WhereAmI;
   AddText(ThemeText);
