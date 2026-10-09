@@ -90,17 +90,22 @@ type
       PlayerAvatarButtonMD5: array of UTF8String;
 
       // ui-v2 (Midnight) player setup
-      FRow: integer;   // 0 singers count, 1 singer cards, 2 avatar, 3 name
+      FRow: integer;   // 0 singers count, 1 singer cards, 2 avatar, 3 colour, 4 name
       FRingX, FRingY, FRingW, FRingH: single;
       FRingReady: boolean;
       FCountRects: array[0..4] of TMRect;
       FCardRects: array[0..UIni.IMaxPlayerCount-1] of TMRect;
       FBackRect, FContinueRect, FAvatarRect, FAvatarPrev, FAvatarNext, FNameRect: TMRect;
+      FColorPill: TMRect;
+      FColorRects: array[0..15] of TMRect;
       function CardSize: single;
       function AvatarTexture(P: integer): TTexture;
       procedure SetCount(Index: integer);
       procedure SelectPlayer(Index: integer);
       procedure StepAvatar(Delta: integer);
+      function ColorUsedByOther(K: integer): boolean;
+      procedure SetColor(K: integer);
+      procedure StepColor(Delta: integer);
       procedure SetRow(Row: integer);
       procedure GoBack;
       procedure ContinueToSongs;
@@ -157,13 +162,15 @@ uses
 
 { =====================================================================
   ui-v2: Midnight player setup
-  Rows: 0 = number of singers, 1 = singer cards, 2 = avatar, 3 = name.
-  Colour and difficulty are no longer shown; each singer keeps the saved
-  values (colours are still assigned so they never clash).
+  Rows: 0 = number of singers, 1 = singer cards, 2 = avatar (arrows on
+  the selected card), 3 = colour swatches, 4 = name.
+  Difficulty is no longer shown; each singer keeps the saved value.
+  Two singers can't share a colour.
   ===================================================================== }
 
 const
   PN_PAD = 56;
+  ROW_NAME = 4;
 
 function PlayerMColor(ColorNum: integer): TMColor;
 var
@@ -214,14 +221,52 @@ begin
   SetPlayerAvatar(PlayerIndex);
 end;
 
+function TScreenName.ColorUsedByOther(K: integer): boolean;
+var
+  J: integer;
+begin
+  Result := false;
+  for J := 0 to UIni.IPlayersVals[CountIndex] - 1 do
+    if (J <> PlayerIndex) and (Num[J] = K) then
+    begin
+      Result := true;
+      Exit;
+    end;
+end;
+
+procedure TScreenName.SetColor(K: integer);
+begin
+  if (K < 1) or (K > Length(IPlayerColorTranslated)) or ColorUsedByOther(K) then
+    Exit;
+  PlayerColorButton(K);
+  SetPlayerAvatar(PlayerIndex);
+end;
+
+procedure TScreenName.StepColor(Delta: integer);
+var
+  K, N, Tries: integer;
+begin
+  N := Length(IPlayerColorTranslated);
+  K := Num[PlayerIndex];
+  for Tries := 1 to N do
+  begin
+    K := ((K - 1 + Delta + N) mod N) + 1;
+    if not ColorUsedByOther(K) then
+    begin
+      SetColor(K);
+      Exit;
+    end;
+  end;
+end;
+
 procedure TScreenName.SetRow(Row: integer);
 begin
   if (Row < 0) then
     Row := 0;
-  if (Row > 3) then
-    Row := 3;
+  if (Row > ROW_NAME) then
+    Row := ROW_NAME;
   FRow := Row;
-  SetTextInput(FRow = 3);
+  SetTextInput(FRow = ROW_NAME);
 end;
 
 procedure TScreenName.GoBack;
@@ -348,6 +393,25 @@ begin
             Exit;
           end;
 
+        // avatar arrows sit on the selected card, so test them first
+        if MHit(VX, VY, FAvatarPrev) then
+        begin
+          StepAvatar(-1);
+          SetRow(2);
+          Exit;
+        end;
+        if MHit(VX, VY, FAvatarNext) then
+        begin
+          StepAvatar(1);
+          SetRow(2);
+          Exit;
+        end;
+        if MHit(VX, VY, FAvatarRect) then
+        begin
+          SetRow(2);
+          Exit;
+        end;
+
         for I := 0 to UIni.IPlayersVals[CountIndex] - 1 do
           if MHit(VX, VY, FCardRects[I]) then
           begin
@@ -356,20 +420,18 @@ begin
             Exit;
           end;
 
-        if MHit(VX, VY, FAvatarPrev) then
-        begin
-          StepAvatar(-1);
-          SetRow(2);
-        end
-        else if MHit(VX, VY, FAvatarNext) then
-        begin
-          StepAvatar(1);
-          SetRow(2);
-        end
-        else if MHit(VX, VY, FAvatarRect) then
-          SetRow(2)
+        for I := 0 to High(FColorRects) do
+          if MHit(VX, VY, FColorRects[I]) then
+          begin
+            SetColor(I + 1);
+            SetRow(3);
+            Exit;
+          end;
+
+        if MHit(VX, VY, FColorPill) then
+          SetRow(3)
         else if MHit(VX, VY, FNameRect) then
-          SetRow(3);
+          SetRow(ROW_NAME);
       end;
   end;
 end;
@@ -381,7 +443,7 @@ begin
   case PressedKey of
     // Templates for Names Mod
     SDLK_F1, SDLK_F2, SDLK_F3, SDLK_F4, SDLK_F5, SDLK_F6, SDLK_F7, SDLK_F8, SDLK_F9, SDLK_F10, SDLK_F11, SDLK_F12:
-     if (FRow = 3) then
+     if (FRow = ROW_NAME) then
      begin
        SuppressKey := true;
      end
@@ -401,7 +463,7 @@ function TScreenName.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; Presse
   var
     isAlternate: boolean;
   begin
-    if (FRow <> 3) then
+    if (FRow <> ROW_NAME) then
       Exit;
     isAlternate := (SDL_ModState = KMOD_LSHIFT) or (SDL_ModState = KMOD_RSHIFT);
     isAlternate := isAlternate or (SDL_ModState = KMOD_LALT); // legacy key combination
@@ -421,13 +483,13 @@ begin
   + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
 
   // typing a name
-  if (FRow = 3) and IsPrintableChar(CharCode) then
+  if (FRow = ROW_NAME) and IsPrintableChar(CharCode) then
   begin
     PlayerNames[PlayerIndex] := PlayerNames[PlayerIndex] + UCS4ToUTF8String(CharCode);
     Exit;
   end;
 
-  if (FRow <> 3) and (PressedKey = SDLK_Q) then
+  if (FRow <> ROW_NAME) and (PressedKey = SDLK_Q) then
   begin
     Result := false;
     Exit;
@@ -450,7 +512,7 @@ begin
 
     SDLK_BACKSPACE:
       begin
-        if (FRow = 3) then
+        if (FRow = ROW_NAME) then
         begin
           Len := LengthUTF8(PlayerNames[PlayerIndex]);
           if (Len > 0) then
@@ -480,6 +542,7 @@ begin
         0: SetCount(CountIndex + 1);
         1: SelectPlayer(PlayerIndex + 1);
         2: StepAvatar(1);
+        3: StepColor(1);
       end;
 
     SDLK_LEFT:
@@ -487,6 +550,7 @@ begin
         0: SetCount(CountIndex - 1);
         1: SelectPlayer(PlayerIndex - 1);
         2: StepAvatar(-1);
+        3: StepColor(-1);
       end;
   end;
 end;
@@ -1122,36 +1186,49 @@ begin
       MText(R.X + 34, R.Y + AvS + 33, Nm, 18, true, mcText, 1, mtaLeft, R.W - 50);
   end;
 
-  { editor for the selected singer }
-  EdY := Y + CardH + 32;
+  { avatar arrows on the selected singer's picture }
+  R := FCardRects[PlayerIndex];
+  FAvatarRect := MRect(R.X + 16, R.Y + 16, AvS, AvS);
+  FAvatarPrev := MRect(R.X + 16 - 18, R.Y + 16 + AvS / 2 - 18, 36, 36);
+  FAvatarNext := MRect(R.X + 16 + AvS - 18, R.Y + 16 + AvS / 2 - 18, 36, 36);
 
-  // avatar picker
-  FAvatarRect := MRect(PN_PAD, EdY, 330, 60);
-  R := FAvatarRect;
-  MFillRound(R.X, R.Y, R.W, R.H, 30, mcSurface, 1);
-  MStrokeRound(R.X, R.Y, R.W, R.H, 30, 1, mcBorder, 1);
-  FAvatarPrev := MRect(R.X + 8, R.Y + 8, 44, 44);
-  FAvatarNext := MRect(R.X + R.W - 52, R.Y + 8, 44, 44);
-  MFillCircle(FAvatarPrev.X + 22, FAvatarPrev.Y + 22, 22, mcSurface2, 1);
-  MFillCircle(FAvatarNext.X + 22, FAvatarNext.Y + 22, 22, mcSurface2, 1);
-  MIconBack(FAvatarPrev.X + 22, FAvatarPrev.Y + 22, 22, mcText, 1);
-  // forward arrow: back icon mirrored by drawing it with lines
-  MIconForward(FAvatarNext.X + 22, FAvatarNext.Y + 22, 22, mcText, 1);
-  if (PlayerAvatars[PlayerIndex] <= 0) then
-    Lbl := 'No avatar'
-  else
-    Lbl := 'Avatar ' + IntToStr(PlayerAvatars[PlayerIndex]) + ' of ' + IntToStr(High(AvatarsList));
-  MText(R.X + R.W / 2, R.Y + 20, Lbl, 18, false, mcText, 1, mtaCenter, R.W - 120);
+  { colour swatches for the selected singer }
+  EdY := Y + CardH + 28;
+  W := 104 + Length(FColorRects) * 38;
+  FColorPill := MRect(PN_PAD, EdY, W, 56);
+  R := FColorPill;
+  MFillRound(R.X, R.Y, R.W, R.H, 28, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, 28, 1, mcBorder, 1);
+  MText(R.X + 24, R.Y + 19, 'Colour', 15, false, mcMuted, 1);
+  for I := 0 to High(FColorRects) do
+  begin
+    FColorRects[I] := MRect(R.X + 92 + I * 38, R.Y + 12, 32, 32);
+    PC := PlayerMColor(I + 1);
+    if ColorUsedByOther(I + 1) then
+    begin
+      // taken by another singer
+      MFillCircle(FColorRects[I].X + 16, FColorRects[I].Y + 16, 9, PC, 0.3);
+      FColorRects[I] := MRect(0, 0, 0, 0);
+    end
+    else if (Num[PlayerIndex] = I + 1) then
+    begin
+      MFillCircle(FColorRects[I].X + 16, FColorRects[I].Y + 16, 16, mcText, 1);
+      MFillCircle(FColorRects[I].X + 16, FColorRects[I].Y + 16, 13, PC, 1);
+    end
+    else
+      MFillCircle(FColorRects[I].X + 16, FColorRects[I].Y + 16, 12, PC, 1);
+  end;
 
-  // name field
-  FNameRect := MRect(PN_PAD + 330 + 20, EdY, 400, 60);
+  { name field and continue }
+  EdY := EdY + 56 + 20;
+  FNameRect := MRect(PN_PAD, EdY, 400, 60);
   R := FNameRect;
   MFillRound(R.X, R.Y, R.W, R.H, 30, mcSurface, 1);
   MStrokeRound(R.X, R.Y, R.W, R.H, 30, 1, mcBorder, 1);
   MText(R.X + 24, R.Y + 21, 'Name', 15, false, mcMuted, 1);
   Nm := PlayerNames[PlayerIndex];
   MText(R.X + 82, R.Y + 18, Nm, 20, true, mcText, 1, mtaLeft, R.W - 110);
-  if (FRow = 3) and ((SDL_GetTicks div 500) mod 2 = 0) then
+  if (FRow = ROW_NAME) and ((SDL_GetTicks div 500) mod 2 = 0) then
   begin
     TW := MTextW(Nm, 20, true);
     if (TW > R.W - 110) then
@@ -1176,6 +1253,7 @@ begin
     0: Ring := FCountRects[CountIndex];
     1: Ring := FCardRects[PlayerIndex];
     2: Ring := FAvatarRect;
+    3: Ring := FColorPill;
   else
     Ring := FNameRect;
   end;
@@ -1196,8 +1274,19 @@ begin
     MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 22, 3, mcText, 1)
   else if (FRow = 1) then
     MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 26, 3, mcText, 1)
+  else if (FRow = 2) then
+    // around the picture, matching its rounded corners
+    MStrokeRound(FRingX - 5, FRingY - 5, FRingW + 10, FRingH + 10, 18, 3, mcText, 1)
   else
     MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, (FRingH + 12) / 2, 3, mcText, 1);
+
+  { avatar arrows, drawn on top of the selection ring }
+  MFillCircle(FAvatarPrev.X + 18, FAvatarPrev.Y + 18, 18, mcSurface2, 1);
+  MStrokeRound(FAvatarPrev.X, FAvatarPrev.Y, 36, 36, 18, 1, mcBorder, 1);
+  MIconBack(FAvatarPrev.X + 18, FAvatarPrev.Y + 18, 18, mcText, 1);
+  MFillCircle(FAvatarNext.X + 18, FAvatarNext.Y + 18, 18, mcSurface2, 1);
+  MStrokeRound(FAvatarNext.X, FAvatarNext.Y, 36, 36, 18, 1, mcBorder, 1);
+  MIconForward(FAvatarNext.X + 18, FAvatarNext.Y + 18, 18, mcText, 1);
 
   { footer }
   X := PN_PAD;

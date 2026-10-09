@@ -670,8 +670,9 @@ begin
   ScreenSing := self;
   screenSingViewRef := TScreenSingView.Create();
   CheckPlayerConfigOnNextSong := true;
-  // for now: default to letterbox but preserve aspect between songs
-  BackgroundAspectCorrection := acoLetterBox;
+  // ui-v2: fill the whole screen with the video (crop rather than add
+  // black bars); the A key still cycles crop / halfway / letterbox
+  BackgroundAspectCorrection := acoCrop;
 
   ClearSettings;
 end;
