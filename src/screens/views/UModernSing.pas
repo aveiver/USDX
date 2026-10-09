@@ -165,19 +165,14 @@ end;
 procedure ModernSingBackdrop;
 begin
   MBegin;
-  // top: behind the chips
-  MFillGradientV(0, 0, MUI_W, 150, mcBg, 0.85, 0);
-  // bottom: behind the lyrics
+  // soft fades only (no solid bands), so the video still fills the screen:
+  // a light one behind the timeline and chips ...
+  MFillGradientV(0, 0, MUI_W, 130, mcBg, 0.6, 0);
+  // ... and a longer one behind the lyrics
   if IsKaraoke then
-  begin
-    MFillGradientV(0, 380, MUI_W, 140, mcBg, 0, 0.92);
-    MFillRect(0, 520, MUI_W, MUI_H - 520, mcBg, 0.92);
-  end
+    MFillGradientV(0, 360, MUI_W, MUI_H - 360, mcBg, 0, 0.75)
   else
-  begin
-    MFillGradientV(0, 470, MUI_W, 90, mcBg, 0, 0.92);
-    MFillRect(0, 560, MUI_W, MUI_H - 560, mcBg, 0.92);
-  end;
+    MFillGradientV(0, 450, MUI_W, MUI_H - 450, mcBg, 0, 0.75);
   MEnd;
 end;
 
@@ -191,7 +186,7 @@ const
 var
   Line: PLine;
   LenR: real;
-  BeatW, Step, NH, X1, X2, Y, Pulse, LastX, LastY: single;
+  BeatW, Step, NH, X1, X2, Y, Pulse, LastX, LastY, NowX: single;
   N, First, I: integer;
   PC, Gold: TMColor;
   HasLast, LastActive: boolean;
@@ -239,6 +234,11 @@ begin
   Step := (R.H - 2 * PAD_Y - NH) / SEMITONES;
   First := Line^.Notes[0].StartBeat;
   Pulse := 0.5 + 0.5 * Sin(SDL_GetTicks / 300);
+
+  // a line that moves along the lane with the song
+  NowX := R.X + PAD_X + (LyricsState.MidBeat - First) * BeatW;
+  if (NowX >= R.X + PAD_X) and (NowX <= R.X + R.W - PAD_X) then
+    MFillRect(NowX - 1, R.Y + 10, 2, R.H - 20, mcText, 0.45);
 
   // the notes to sing
   if ScreenSing.Settings.NotesVisible[PlayerIndex] then
@@ -470,16 +470,16 @@ end;
 
 { --- HUD --- }
 
-// thin timeline along the top: lyric sections, filled lime as the song plays
+// timeline along the top: rounded lyric sections on a track, the played
+// part in lime and a dot for where the song is now
 procedure DrawTimeline(CurTime, TotalTime: real);
 const
-  BAR_H = 6;
+  TL_Y = 14;
+  TL_H = 6;
 var
-  SongStart, SongEnd, SongDur, Gap, Prog, X, W: real;
-  LineIndex: integer;
+  SongStart, SongEnd, SongDur, Gap, Prog, X, W, L, TW: real;
+  LineIndex, pass: integer;
   Ln: PLine;
-  pass: integer;
-  C: TMColor;
 begin
   if (CurrentSong.BPM <= 0) or (TotalTime <= 0) then
     Exit;
@@ -494,19 +494,17 @@ begin
   if (Prog < 0) then Prog := 0;
   if (Prog > 1) then Prog := 1;
 
-  MFillRect(0, 0, MUI_W, BAR_H, mcBg, 0.6);
+  L := HUD_PAD;
+  TW := MUI_W - 2 * HUD_PAD;
 
-  // pass 0: all sections in white; pass 1: the part already played in lime
+  // the track
+  MFillRound(L, TL_Y, TW, TL_H, TL_H / 2, mcBg, 0.7);
+
+  // pass 0: every lyric section; pass 1: the sections already played, in lime
   for pass := 0 to 1 do
   begin
     if (pass = 1) then
-    begin
-      MClipBegin(MRect(0, 0, MUI_W * Prog, BAR_H));
-      MFillRect(0, 0, MUI_W * Prog, BAR_H, mcAccent, 0.35);
-      C := mcAccent;
-    end
-    else
-      C := mcText;
+      MClipBegin(MRect(L, TL_Y - 2, TW * Prog, TL_H + 4));
 
     if (Length(CurrentSong.Tracks) > 0) then
       for LineIndex := 0 to High(CurrentSong.Tracks[0].Lines) do
@@ -514,36 +512,24 @@ begin
         Ln := @CurrentSong.Tracks[0].Lines[LineIndex];
         if (Length(Ln^.Notes) = 0) or (Ln^.HighNote < 0) then
           Continue;
-        X := (Gap + Ln^.Notes[0].StartBeat - SongStart) / SongDur * MUI_W;
+        X := L + (Gap + Ln^.Notes[0].StartBeat - SongStart) / SongDur * TW;
         W := (Ln^.Notes[Ln^.HighNote].StartBeat + Ln^.Notes[Ln^.HighNote].Duration -
-              Ln^.Notes[0].StartBeat) / SongDur * MUI_W;
-        if (W < 2) then
-          W := 2;
+              Ln^.Notes[0].StartBeat) / SongDur * TW - 3; // small gap between sections
+        if (W < TL_H) then
+          W := TL_H;
         if (pass = 0) then
-          MFillRect(X, 0, W, BAR_H, C, 0.45)
+          MFillRound(X, TL_Y, W, TL_H, TL_H / 2, mcText, 0.45)
         else
-          MFillRect(X, 0, W, BAR_H, C, 1);
+          MFillRound(X, TL_Y, W, TL_H, TL_H / 2, mcAccent, 1);
       end;
 
     if (pass = 1) then
       MClipEnd;
   end;
-end;
 
-
-function PopupText(Rating: integer): UTF8String;
-begin
-  case Rating of
-    8: Result := Language.Translate('POPUP_PERFECT');
-    7: Result := Language.Translate('POPUP_AWESOME');
-    6: Result := Language.Translate('POPUP_GREAT');
-    5: Result := Language.Translate('POPUP_GOOD');
-    4: Result := Language.Translate('POPUP_NOTBAD');
-    3: Result := Language.Translate('POPUP_BAD');
-    2: Result := Language.Translate('POPUP_POOR');
-  else
-    Result := Language.Translate('POPUP_AWFUL');
-  end;
+  // where the song is now
+  MFillCircle(L + TW * Prog, TL_Y + TL_H / 2, 7, mcText, 1);
+  MFillCircle(L + TW * Prog, TL_Y + TL_H / 2, 4, mcAccent, 1);
 end;
 
 // singer chip: avatar, name and score; AlignRight puts the avatar on the right
@@ -558,7 +544,7 @@ var
   Name: UTF8String;
 begin
   PC := PlayerColor(PlayerIndex);
-  MFillRound(X, Y, W, H, H / 2, mcSurface, 0.9);
+  MFillRound(X, Y, W, H, H / 2, mcSurface, 1);
   MStrokeRound(X, Y, W, H, H / 2, 1, mcBorder, 1);
 
   if AlignRight then
@@ -664,7 +650,7 @@ begin
   if AlignRight then
     X := X - W;
 
-  MFillRound(X, Y, W, 48, 24, mcSurface, 0.9);
+  MFillRound(X, Y, W, 48, 24, mcSurface, 1);
   MStrokeRound(X, Y, W, 48, 24, 1, mcBorder, 1);
   MText(X + 22, Y + 15, Title, 16, true, mcText, 1, mtaLeft, 360);
   MText(X + 22 + TW + 16, Y + 15, Artist, 16, false, mcMuted, 1, mtaLeft, 260);
@@ -690,21 +676,21 @@ begin
   if not Scoring then
   begin
     // scoring off: just the song
-    DrawSongChip(HUD_PAD, 28, false, TimeText);
+    DrawSongChip(HUD_PAD, 38, false, TimeText);
   end
   else if (N = 1) then
   begin
-    DrawPlayerChip(HUD_PAD, 22, 220, 0, false, ShowScore);
-    DrawPopup(HUD_PAD, 90, 0, false);
-    DrawSongChip(MUI_W - HUD_PAD, 26, true, TimeText);
+    DrawPlayerChip(HUD_PAD, 34, 220, 0, false, ShowScore);
+    DrawPopup(HUD_PAD, 100, 0, false);
+    DrawSongChip(MUI_W - HUD_PAD, 38, true, TimeText);
   end
   else if (N = 2) then
   begin
-    DrawPlayerChip(HUD_PAD, 22, 220, 0, false, ShowScore);
-    DrawPlayerChip(MUI_W - HUD_PAD - 220, 22, 220, 1, true, ShowScore);
-    DrawPopup(HUD_PAD, 86, 0, false);
-    DrawPopup(MUI_W - HUD_PAD, 86, 1, true);
-    MText(MUI_W / 2, 40, CurrentSong.Title + '   ' + TimeText, 15, false, mcMuted, 1, mtaCenter, MUI_W - 560);
+    DrawPlayerChip(HUD_PAD, 34, 220, 0, false, ShowScore);
+    DrawPlayerChip(MUI_W - HUD_PAD - 220, 34, 220, 1, true, ShowScore);
+    DrawPopup(HUD_PAD, 100, 0, false);
+    DrawPopup(MUI_W - HUD_PAD, 100, 1, true);
+    MText(MUI_W / 2, 52, CurrentSong.Title + '   ' + TimeText, 15, false, mcMuted, 1, mtaCenter, MUI_W - 560);
   end
   else
   begin
@@ -713,7 +699,7 @@ begin
     for I := 0 to N - 1 do
     begin
       X := HUD_PAD + I * (ChipW + 10);
-      DrawPlayerChip(X, 22, ChipW, I, false, ShowScore);
+      DrawPlayerChip(X, 34, ChipW, I, false, ShowScore);
     end;
   end;
 
