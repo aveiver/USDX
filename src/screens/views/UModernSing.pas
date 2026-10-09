@@ -352,7 +352,8 @@ procedure DrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real; 
 var
   I, N: integer;
   Total, X, S, Fr: single;
-  SoFar: UTF8String;
+  Full, SoFar: UTF8String;
+  Txt: array of UTF8String;
   Pos, Wid: array of single;
   Shadow: TMColor;
 begin
@@ -362,13 +363,22 @@ begin
   if (N = 0) then
     Exit;
 
+  // "~" marks a held note in the song file; it isn't meant to be read
+  SetLength(Txt, N);
+  Full := '';
+  for I := 0 to N - 1 do
+  begin
+    Txt[I] := StringReplace(Line.Words[I].Text, '~', '', [rfReplaceAll]);
+    Full := Full + Txt[I];
+  end;
+
   // shrink long lines to fit the screen
   S := Size;
-  Total := MTextW(Line.Text, S, true);
+  Total := MTextW(Full, S, true);
   if (Total > MUI_W - 120) and (Total > 0) then
   begin
     S := S * (MUI_W - 120) / Total;
-    Total := MTextW(Line.Text, S, true);
+    Total := MTextW(Full, S, true);
   end;
   X := CenterX - Total / 2;
 
@@ -378,31 +388,34 @@ begin
   SoFar := '';
   for I := 0 to N - 1 do
   begin
-    Wid[I] := MTextW(Line.Words[I].Text, S, true);
-    SoFar := SoFar + Line.Words[I].Text;
+    Wid[I] := MTextW(Txt[I], S, true);
+    SoFar := SoFar + Txt[I];
     Pos[I] := X + MTextW(SoFar, S, true) - Wid[I];
   end;
 
   // soft shadow for very bright video frames
   Shadow := MColor($000000);
   for I := 0 to N - 1 do
-    MText(Pos[I] + 2, Y + 2, Line.Words[I].Text, S, true, Shadow, 0.55);
+    if (Txt[I] <> '') then
+      MText(Pos[I] + 2, Y + 2, Txt[I], S, true, Shadow, 0.55);
 
   for I := 0 to N - 1 do
   begin
+    if (Txt[I] = '') then
+      Continue;
     if not Active then
-      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcMuted, 1)
+      MText(Pos[I], Y, Txt[I], S, true, mcMuted, 1)
     else if (Beat >= Line.Words[I].Start + Line.Words[I].Length) then
-      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcAccent, 1)
+      MText(Pos[I], Y, Txt[I], S, true, mcAccent, 1)
     else if (Beat <= Line.Words[I].Start) or (Line.Words[I].Length <= 0) then
-      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcText, 1)
+      MText(Pos[I], Y, Txt[I], S, true, mcText, 1)
     else
     begin
       // the word being sung fills in lime from left to right
-      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcText, 1);
+      MText(Pos[I], Y, Txt[I], S, true, mcText, 1);
       Fr := (Beat - Line.Words[I].Start) / Line.Words[I].Length;
       MClipBegin(MRect(Pos[I], Y - S * 0.5, Wid[I] * Fr, S * 2));
-      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcAccent, 1);
+      MText(Pos[I], Y, Txt[I], S, true, mcAccent, 1);
       MClipEnd;
     end;
   end;
@@ -551,7 +564,9 @@ end;
 procedure DrawPlayerChip(X, Y, W: single; PlayerIndex: integer; AlignRight, ShowScore: boolean);
 const
   H = 56;
-  AV = 44;
+  // small enough that the avatar's square corners stay inside the chip's
+  // rounded end, so the corner mask can't show outside it
+  AV = 38;
 var
   Tex: TTexture;
   TC, PC: TMColor;
@@ -562,10 +577,11 @@ begin
   MFillRound(X, Y, W, H, H / 2, mcSurface, 1);
   MStrokeRound(X, Y, W, H, H / 2, 1, mcBorder, 1);
 
+  // avatar centred in the chip's rounded end
   if AlignRight then
-    AX := X + W - 6 - AV
+    AX := X + W - H / 2 - AV / 2
   else
-    AX := X + 6;
+    AX := X + H / 2 - AV / 2;
 
   // avatar (or the singer's colour) in a circle
   Tex := AvatarPlayerTextures[PlayerIndex + 1];
@@ -573,8 +589,8 @@ begin
   begin
     TC.R := Tex.ColR; TC.G := Tex.ColG; TC.B := Tex.ColB;
     MFillCircle(AX + AV / 2, Y + H / 2, AV / 2, PC, 1);
-    MDrawTexTint(Tex, AX, Y + 6, AV, AV, 1, TC);
-    MCornerMask(AX, Y + 6, AV, AV, AV / 2, mcSurface);
+    MDrawTexTint(Tex, AX, Y + (H - AV) / 2, AV, AV, 1, TC);
+    MCornerMask(AX, Y + (H - AV) / 2, AV, AV, AV / 2, mcSurface);
   end
   else
     MFillCircle(AX + AV / 2, Y + H / 2, AV / 2, PC, 1);
