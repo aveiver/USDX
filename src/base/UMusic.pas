@@ -1118,11 +1118,13 @@ procedure TSoundLibrary.LoadSounds();
 begin
   UnloadSounds();
 
-  Start   := AudioPlayback.OpenSound(SoundPath.Append('Common start.mp3'));
-  Back    := AudioPlayback.OpenSound(SoundPath.Append('Common back.mp3'));
-  Swoosh  := AudioPlayback.OpenSound(SoundPath.Append('menu swoosh.mp3'));
-  Change  := AudioPlayback.OpenSound(SoundPath.Append('select music change music 50.mp3'));
-  Option  := AudioPlayback.OpenSound(SoundPath.Append('option change col.mp3'));
+  // ui-v2: the menus are silent; no whoosh on enter/back, song change or
+  // option change (PlaySound ignores nil streams)
+  Start   := nil;
+  Back    := nil;
+  Swoosh  := nil;
+  Change  := nil;
+  Option  := nil;
   Click   := AudioPlayback.OpenSound(SoundPath.Append('rimshot022b.wav'));
   Applause:= AudioPlayback.OpenSound(SoundPath.Append('Applause.mp3'));
 
