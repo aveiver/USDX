@@ -90,11 +90,9 @@ type
   UTF8StringArray = array of UTF8String;
   InteractionID = (
     iLanguageSlide,
-    iSongMenuSlide,
     iTabsSlide,
     iSortingSlide,
     iShowScoresSlide,
-    iKaraokeModeSlide,
     iDebugSlide,
     iAVDelaySlide,
     iMicDelaySlide,
@@ -311,11 +309,11 @@ procedure TScreenOptionsGame.LoadWidgets;
 begin
   // when editing this, also update the InteractionID enum declaration
   AddSelectSlide('SING_OPTIONS_GAME_LANGUAGE', Ini.Language, ILanguageTranslated);
-  AddSelectSlide('SING_OPTIONS_GAME_SONGMENU', Ini.SongMenu, ISongMenuTranslated);
+  // ui-v2: the song browser layout is fixed, so the Song Menu style option is gone
   AddSelectSlide('SING_OPTIONS_GAME_TABS', Ini.Tabs, ITabsTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_SORTING', Ini.Sorting, ISortingTranslated);
   AddSelectSlide('SING_OPTIONS_GAME_SHOWSCORES', Ini.ShowScores, IShowScoresTranslated);
-  AddSelectSlide('SING_OPTIONS_GAME_KARAOKEMODE', Ini.KaraokeMode, IKaraokeModeTranslated);
+  // ui-v2: scoring on/off (karaoke mode) is switched from the song browser (K)
   AddSelectSlide('SING_OPTIONS_GAME_DEBUG', Ini.Debug, IDebugTranslated);
   UpdateCalculatedSelectSlides(true);
 end;

@@ -34,36 +34,42 @@ interface
 {$I switches.inc}
 
 uses
-  UConfig,
-  UDisplay,
-  UFiles,
   UMenu,
-  UMusic,
-  UScreenSong,
-  USong,
-  UThemes,
-  MD5,
+  UModernUI,
   sdl2,
   SysUtils;
 
 type
-
+  {
+    Midnight main menu (ui-v2).
+    Items: 0 Sing (big card), 1 Jukebox (card), 2 Options, 3 Exit (header pills).
+    Drawn with UModernUI instead of the theme's 800x600 buttons.
+  }
   TScreenMain = class(TMenu)
+  private
+    FSel: integer;
+    // animated selection ring
+    FRingX, FRingY, FRingW, FRingH: single;
+    FRingReady: boolean;
+    function ItemRect(Index: integer): TMRect;
+    procedure Activate(Index: integer; var KeepGoing: boolean);
+    procedure MoveSel(DX, DY: integer);
   public
-    TextDescription:     integer;
-    TextDescriptionLong: integer;
-
     constructor Create; override;
     function ParseInput(PressedKey: Cardinal; CharCode: UCS4Char;
       PressedDown: boolean): boolean; override;
     function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
     procedure OnShow; override;
-    procedure SetInteraction(Num: integer); override;
     function Draw: boolean; override;
   end;
 
 const
   ID = 'ID_001';   //for help system
+
+  MAIN_SING    = 0;
+  MAIN_JUKEBOX = 1;
+  MAIN_OPTIONS = 2;
+  MAIN_EXIT    = 3;
 
 var
   WantSoftwareRenderingMsg: boolean;
@@ -71,210 +77,30 @@ var
 implementation
 
 uses
+  UDisplay,
   UGraphic,
   UHelp,
   UIni,
   ULanguage,
   ULog,
+  UMusic,
   UNote,
   UParty,
   URenderer,
-  USkins,
+  UScreenSong,
+  USong,
   USongs,
-  UUnicodeUtils;
+  UThemes,
+  UConfig;
 
-function TScreenMain.ParseInput(PressedKey: Cardinal; CharCode: UCS4Char;
-  PressedDown: boolean): boolean;
-begin
-  Result := true;
-
-  if (PressedDown) then
-  begin // Key Down
-        // check normal keys
-    case PressedKey of
-      SDLK_S: begin
-        FadeTo(@ScreenName, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_P: begin
-        if (Ini.Players >= 1) and (Party.ModesAvailable) then
-        begin
-          FadeTo(@ScreenPartyOptions, SoundLib.Start);
-          Exit;
-        end;
-      end;
-
-      SDLK_J: begin
-        FadeTo(@ScreenJukeboxPlaylist, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_R: begin
-        UGraphic.UnLoadScreens();
-        Theme.LoadTheme(Ini.Theme, Ini.Color);
-        UGraphic.LoadScreens(USDXVersionStr);
-      end;
-
-      SDLK_T: begin
-        FadeTo(@ScreenStatMain, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_E: begin
-        FadeTo(@ScreenEdit, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_O: begin
-        FadeTo(@ScreenOptions, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_A: begin
-        FadeTo(@ScreenAbout, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_C: begin
-        ScreenAbout.ShowCreditsInAbout;
-        FadeTo(@ScreenAbout, SoundLib.Start);
-        Exit;
-      end;
-
-      SDLK_Q: begin
-        Result := false;
-        Exit;
-      end;
-    end;
-
-    // check special keys
-    case PressedKey of
-      SDLK_ESCAPE,
-      SDLK_BACKSPACE:
-      begin
-        Result := false;
-      end;
-
-      SDLK_TAB:
-      begin
-        ScreenPopupHelp.ShowPopup();
-      end;
-
-      SDLK_RETURN:
-      begin
-        // reset
-        Party.bPartyGame := false;
-
-        //Solo
-        if (Interaction = 0) then
-        begin
-          if (Songs.SongList.Count >= 1) then
-          begin
-            if (Ini.Players >= 0) and (Ini.Players <= 3) then
-              PlayersPlay := Ini.Players + 1;
-            if (Ini.Players = 4) then
-              PlayersPlay := 6;
-
-            if Ini.OnSongClick = sSelectPlayer then
-              FadeTo(@ScreenSong)
-            else
-            begin
-              ScreenName.Goto_SingScreen := false;
-              FadeTo(@ScreenName, SoundLib.Start);
-            end;
-          end
-          else //show error message
-            ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
-        end;
-
-        //Jukebox
-        if Interaction = 1 then
-        begin
-          if (Songs.SongList.Count >= 1) then
-          begin
-            FadeTo(@ScreenJukeboxPlaylist, SoundLib.Start);
-          end
-          else //show error message, No Songs Loaded
-            ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
-        end;
-
-        //Options
-        if Interaction = 2 then
-        begin
-          FadeTo(@ScreenOptions, SoundLib.Start);
-        end;
-
-        //About
-        if Interaction = 3 then
-        begin
-          FadeTo(@ScreenAbout, SoundLib.Start);
-        end;
-
-        //Exit
-        if Interaction = 4 then
-        begin
-          Result := false;
-        end;
-      end;
-      {**
-       * Up and Down could be done at the same time,
-       * but I don't want to declare variables inside
-       * functions like this one, called so many times
-       *}
-      SDLK_DOWN: InteractInc;
-      SDLK_UP: InteractDec;
-      SDLK_RIGHT: InteractNext;
-      SDLK_LEFT: InteractPrev;
-    end;
-  end
-  else // Key Up
-    case PressedKey of
-      SDLK_RETURN:
-      begin
-      end;
-    end;
-end;
-
-function TScreenMain.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
-begin
-  // default mouse behaviour
-  Result := inherited ParseMouse(MouseButton, BtnDown, X, Y);
-end;
+const
+  PAD = 56;
 
 constructor TScreenMain.Create;
 begin
   inherited Create;
-{**
- * Attention ^^:
- * New Creation Order needed because of LoadFromTheme
- * and Button Collections.
- * At First Custom Texts and Statics
- * Then LoadFromTheme
- * after LoadFromTheme the Buttons and Selects
- *}
-  TextDescription     := AddText(Theme.Main.TextDescription);
-  TextDescriptionLong := AddText(Theme.Main.TextDescriptionLong);
-  Text[TextDescriptionLong].Visible := false;
-
-  LoadFromTheme(Theme.Main);
-
-  // Theme.Main.Text[0] (MainText1, the "Karaoke" title) becomes Text[2]
-  // here, since TextDescription/TextDescriptionLong were added first above.
-  Text[2].Visible := false;
-
-  // Theme.Main.Statics[0] (MainStatic1, the winged-microphone logo icon) -
-  // no statics are added before LoadFromTheme, so it's Statics[0] here.
-  Statics[0].Visible := false;
-
-  AddButton(Theme.Main.ButtonSolo);
-  AddButton(Theme.Main.ButtonJukebox);
-  AddButton(Theme.Main.ButtonOptions);
-  AddButton(Theme.Main.ButtonAbout);
-  AddButton(Theme.Main.ButtonExit);
-
-  Interaction := 0;
-
+  FSel := MAIN_SING;
+  FRingReady := false;
   WantSoftwareRenderingMsg := Renderer.SoftwareRendering;
 end;
 
@@ -289,16 +115,299 @@ begin
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenMains');
 
- {**
-  * Clean up TPartyGame here
-  * at the moment there is no better place for this
-  *}
+  // Clean up TPartyGame here; at the moment there is no better place for this
   Party.Clear;
+
+  FRingReady := false;
+end;
+
+{ layout }
+
+function TScreenMain.ItemRect(Index: integer): TMRect;
+var
+  CardsY, CardsH, CardsW, SingW, PillW: single;
+begin
+  CardsY := 330;
+  CardsH := 270;
+  CardsW := MUI_W - 2 * PAD - 20;
+  SingW := CardsW * 0.6;
+
+  case Index of
+    MAIN_SING:
+      Result := MRect(PAD, CardsY, SingW, CardsH);
+    MAIN_JUKEBOX:
+      Result := MRect(PAD + SingW + 20, CardsY, CardsW - SingW, CardsH);
+    MAIN_OPTIONS:
+      begin
+        PillW := MTextW(Language.Translate('SING_OPTIONS'), 17, false) + 40;
+        Result := MRect(MUI_W - PAD - (MTextW(Language.Translate('SING_EXIT'), 17, false) + 40) - 10 - PillW, 36, PillW, 46);
+      end;
+  else // MAIN_EXIT
+    begin
+      PillW := MTextW(Language.Translate('SING_EXIT'), 17, false) + 40;
+      Result := MRect(MUI_W - PAD - PillW, 36, PillW, 46);
+    end;
+  end;
+end;
+
+{ input }
+
+procedure TScreenMain.MoveSel(DX, DY: integer);
+begin
+  // cards row: Sing, Jukebox   /   header row: Options, Exit
+  if (DY < 0) and (FSel in [MAIN_SING, MAIN_JUKEBOX]) then
+    FSel := MAIN_OPTIONS
+  else if (DY > 0) and (FSel in [MAIN_OPTIONS, MAIN_EXIT]) then
+    FSel := MAIN_SING
+  else if (DX > 0) then
+  begin
+    case FSel of
+      MAIN_SING:    FSel := MAIN_JUKEBOX;
+      MAIN_OPTIONS: FSel := MAIN_EXIT;
+    end;
+  end
+  else if (DX < 0) then
+  begin
+    case FSel of
+      MAIN_JUKEBOX: FSel := MAIN_SING;
+      MAIN_EXIT:    FSel := MAIN_OPTIONS;
+    end;
+  end;
+end;
+
+procedure TScreenMain.Activate(Index: integer; var KeepGoing: boolean);
+begin
+  // reset
+  Party.bPartyGame := false;
+
+  case Index of
+    MAIN_SING:
+      begin
+        if (Songs.SongList.Count >= 1) then
+        begin
+          if (Ini.Players >= 0) and (Ini.Players <= 3) then
+            PlayersPlay := Ini.Players + 1;
+          if (Ini.Players = 4) then
+            PlayersPlay := 6;
+
+          if Ini.OnSongClick = sSelectPlayer then
+            FadeTo(@ScreenSong)
+          else
+          begin
+            ScreenName.Goto_SingScreen := false;
+            FadeTo(@ScreenName, SoundLib.Start);
+          end;
+        end
+        else
+          ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
+      end;
+
+    MAIN_JUKEBOX:
+      begin
+        if (Songs.SongList.Count >= 1) then
+          FadeTo(@ScreenJukeboxPlaylist, SoundLib.Start)
+        else
+          ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
+      end;
+
+    MAIN_OPTIONS:
+      FadeTo(@ScreenOptions, SoundLib.Start);
+
+    MAIN_EXIT:
+      KeepGoing := false;
+  end;
+end;
+
+function TScreenMain.ParseInput(PressedKey: Cardinal; CharCode: UCS4Char;
+  PressedDown: boolean): boolean;
+begin
+  Result := true;
+
+  if not PressedDown then
+    Exit;
+
+  case PressedKey of
+    SDLK_S:
+      begin
+        FSel := MAIN_SING;
+        Activate(MAIN_SING, Result);
+      end;
+
+    SDLK_J:
+      begin
+        FSel := MAIN_JUKEBOX;
+        Activate(MAIN_JUKEBOX, Result);
+      end;
+
+    SDLK_O:
+      begin
+        FSel := MAIN_OPTIONS;
+        Activate(MAIN_OPTIONS, Result);
+      end;
+
+    SDLK_R:
+      begin
+        UGraphic.UnLoadScreens();
+        Theme.LoadTheme(Ini.Theme, Ini.Color);
+        UGraphic.LoadScreens(USDXVersionStr);
+      end;
+
+    SDLK_Q,
+    SDLK_ESCAPE,
+    SDLK_BACKSPACE:
+      Result := false;
+
+    SDLK_TAB:
+      ScreenPopupHelp.ShowPopup();
+
+    SDLK_RETURN:
+      Activate(FSel, Result);
+
+    SDLK_DOWN:  MoveSel(0, 1);
+    SDLK_UP:    MoveSel(0, -1);
+    SDLK_RIGHT: MoveSel(1, 0);
+    SDLK_LEFT:  MoveSel(-1, 0);
+  end;
+end;
+
+function TScreenMain.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+begin
+  Result := true;
+
+  if (MouseButton = SDL_BUTTON_RIGHT) and BtnDown then
+  begin
+    Result := ParseInput(SDLK_ESCAPE, 0, true);
+    Exit;
+  end;
+
+  MWindowToVirtual(X, Y, VX, VY);
+  for I := MAIN_SING to MAIN_EXIT do
+    if MHit(VX, VY, ItemRect(I)) then
+    begin
+      FSel := I;
+      if BtnDown and (MouseButton = SDL_BUTTON_LEFT) then
+        Activate(I, Result);
+      Exit;
+    end;
+end;
+
+{ drawing }
+
+procedure DrawCard(const R: TMRect; const Title, Caption: UTF8String;
+  Primary, Selected: boolean; Icon: integer);
+var
+  Fg, Sub: TMColor;
+  TitleSize: single;
+begin
+  if Primary then
+  begin
+    MFillRound(R.X, R.Y, R.W, R.H, 24, mcAccent, 1);
+    Fg := mcOnAccent;
+    Sub := mcOnAccent;
+    TitleSize := 44;
+  end
+  else
+  begin
+    if Selected then
+      MFillRound(R.X, R.Y, R.W, R.H, 24, mcSurface2, 1)
+    else
+      MFillRound(R.X, R.Y, R.W, R.H, 24, mcSurface, 1);
+    MStrokeRound(R.X, R.Y, R.W, R.H, 24, 1, mcBorder, 1);
+    Fg := mcText;
+    Sub := mcMuted;
+    TitleSize := 32;
+  end;
+
+  if Icon = 0 then
+    MIconPlay(R.X + 52, R.Y + 56, 36, Fg, 1)
+  else
+    MIconNote(R.X + 50, R.Y + 54, 38, Fg, 1);
+
+  MText(R.X + 32, R.Y + R.H - 34 - 22 - TitleSize, Title, TitleSize, true, Fg, 1, mtaLeft, R.W - 64);
+  MText(R.X + 32, R.Y + R.H - 34 - 18, Caption, 18, false, Sub, 1, mtaLeft, R.W - 64);
+end;
+
+procedure DrawPill(const R: TMRect; const Caption: UTF8String; Selected: boolean);
+begin
+  if Selected then
+  begin
+    MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcText, 1);
+    MText(R.X + R.W / 2, R.Y + 13, Caption, 17, true, mcBg, 1, mtaCenter);
+  end
+  else
+  begin
+    MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
+    MText(R.X + R.W / 2, R.Y + 13, Caption, 17, false, mcMuted, 1, mtaCenter);
+  end;
 end;
 
 function TScreenMain.Draw: boolean;
+var
+  R: TMRect;
+  X, ChipW: single;
+  Status: UTF8String;
 begin
-  Result := inherited Draw;
+  MBegin;
+
+  // background
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  // header: wordmark + pills
+  MIconMic(PAD + 14, 59, 30, mcAccent, 1);
+  MText(PAD + 40, 46, 'UltraStar', 24, true, mcText, 1);
+  DrawPill(ItemRect(MAIN_OPTIONS), Language.Translate('SING_OPTIONS'), FSel = MAIN_OPTIONS);
+  DrawPill(ItemRect(MAIN_EXIT), Language.Translate('SING_EXIT'), FSel = MAIN_EXIT);
+
+  // headline
+  MText(PAD, 128, IntToStr(Songs.SongList.Count) + ' songs ready', 19, false, mcMuted, 1);
+  MText(PAD, 160, 'Pick a song.', 72, true, mcText, 1);
+  MText(PAD, 236, 'Grab a mic.', 72, true, mcText, 1);
+
+  // cards
+  DrawCard(ItemRect(MAIN_SING), Language.Translate('SING_SING'),
+    'Browse your songs and start singing', true, FSel = MAIN_SING, 0);
+  DrawCard(ItemRect(MAIN_JUKEBOX), Language.Translate('SING_JUKEBOX'),
+    'Play songs with lyrics on screen', false, FSel = MAIN_JUKEBOX, 1);
+
+  // selection ring glides between items
+  R := ItemRect(FSel);
+  if not FRingReady then
+  begin
+    FRingX := R.X; FRingY := R.Y; FRingW := R.W; FRingH := R.H;
+    FRingReady := true;
+  end
+  else
+  begin
+    FRingX := MApproach(FRingX, R.X, 14);
+    FRingY := MApproach(FRingY, R.Y, 14);
+    FRingW := MApproach(FRingW, R.W, 14);
+    FRingH := MApproach(FRingH, R.H, 14);
+  end;
+  if FSel in [MAIN_SING, MAIN_JUKEBOX] then
+    MStrokeRound(FRingX - 7, FRingY - 7, FRingW + 14, FRingH + 14, 30, 3, mcText, 1);
+
+  // footer: scoring status + key hints
+  if Boolean(Ini.KaraokeMode) then
+    Status := 'Scoring off'
+  else
+    Status := 'Scoring on';
+  ChipW := MTextW(Status, 15, false) + 44;
+  MFillRound(PAD, 650, ChipW, 34, 17, mcSurface, 1);
+  if Boolean(Ini.KaraokeMode) then
+    MFillCircle(PAD + 18, 667, 4, mcMuted, 1)
+  else
+    MFillCircle(PAD + 18, 667, 4, mcGood, 1);
+  MText(PAD + 30, 658, Status, 15, false, mcMuted, 1);
+
+  X := MUI_W - PAD - 330;
+  X := X + MKeyHint(X, 660, 'Arrows', 'move') + 24;
+  X := X + MKeyHint(X, 660, 'Enter', 'select') + 24;
+  MKeyHint(X, 660, 'Esc', 'quit');
+
+  MEnd;
 
   if not ScreenPopupError.Visible then
   begin
@@ -308,13 +417,8 @@ begin
       ScreenPopupError.ShowPopup(Language.Translate('ERROR_SOFTWARE_RENDERING'));
     end;
   end;
-end;
 
-procedure TScreenMain.SetInteraction(Num: integer);
-begin
-  inherited SetInteraction(Num);
-  Text[TextDescription].Text     := Theme.Main.Description[Interaction];
-  Text[TextDescriptionLong].Text := Theme.Main.DescriptionLong[Interaction];
+  Result := true;
 end;
 
 end.

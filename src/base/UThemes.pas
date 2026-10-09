@@ -3858,6 +3858,8 @@ begin
 
     SectionList := GetSectionList('Song' + prefix + 'SelectSong');
     Song.ListCover.Rows := ReadInteger(SectionList, 'Rows', 5);
+    // ui-v2: the Midnight song browser shows 8 rows whatever the theme says
+    Song.ListCover.Rows := 8;
     Song.ListCover.X := ReadInteger(SectionList, 'X', 300);
     Song.ListCover.Y := ReadInteger(SectionList, 'Y', 120);
     Song.ListCover.W := ReadInteger(SectionList, 'W', 325);

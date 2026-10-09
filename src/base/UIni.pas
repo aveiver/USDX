@@ -1558,6 +1558,8 @@ begin
 
   // SongMenu
   SongMenu := ReadArrayIndex(ISongMenuMode, IniFile, 'Game', 'SongMenu', Ord(smRoulette));
+  // ui-v2: the Midnight song browser is built on list mode, so always use it
+  SongMenu := Ord(smList);
 
   // Tabs
   Tabs := ReadArrayIndex(ITabs, IniFile, 'Game', 'Tabs', 0);

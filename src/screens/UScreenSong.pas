@@ -45,6 +45,7 @@ uses
   UMenu,
   UMenuEqualizer,
   UMenuInteract,
+  UModernUI,
   UMusic,
   UPath,
   URenderer,
@@ -59,6 +60,23 @@ uses
 type
   TVisArr = array of integer;
   TScreenSong = class(TMenu)
+    private
+      // ui-v2 (Midnight) song browser state
+      MListOffset:  single;   // animated first visible list line
+      MHighlightC:  single;   // animated highlight position (list content coords)
+      MSwitch:      single;   // animated scoring switch knob (0 off .. 1 on)
+      MListReady:   boolean;
+      MRowSong:     array of integer;  // song index per drawn row (for the mouse)
+      MRowRect:     array of TMRect;   // row rectangles (virtual canvas)
+
+      function ModernListRect: TMRect;
+      function ModernHeaderRect(Item: integer): TMRect;
+      function ModernSingRect: TMRect;
+      procedure ModernSelectSong(SongIdx: integer);
+      procedure DrawModern;
+      function ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+    public
+      procedure ToggleScoring;
     private
       Equalizer: Tms_Equalizer;
 
@@ -843,6 +861,12 @@ begin
           Exit;
         end;
 
+      SDLK_K: // ui-v2: scoring on/off (karaoke mode)
+        begin
+          ToggleScoring;
+          Exit;
+        end;
+
       SDLK_F:
         begin
           if (Mode = smNormal) and (SDL_ModState = KMOD_LSHIFT) and MakeMedley then
@@ -1446,6 +1470,12 @@ end;
 
 function TScreenSong.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
 begin
+  // ui-v2: when no song menu / jump-to popup is open, use the Midnight layout
+  if not (ScreenSongMenu.Visible or ScreenSongJumpTo.Visible) then
+  begin
+    Result := ParseMouseModern(MouseButton, BtnDown, X, Y);
+    Exit;
+  end;
 
   // transfer mousecords to the 800x600 raster we use to draw
   X := Round((X / (ScreenW / Screens)) * RenderW);
@@ -2874,6 +2904,8 @@ var
 begin
   inherited;
 
+  MListReady := false;
+
   CloseMessage();
 
   if (TSongMenuMode(Ini.SongMenu) in [smChessboard, smList]) then
@@ -3122,9 +3154,6 @@ function TScreenSong.Draw: boolean;
 var
   dx:         real;
   dt:         real;
-  VideoAlpha: real;
-  Position:   real;
-  I, J:       integer;
 begin
 
   FadeMessage();
@@ -3224,159 +3253,8 @@ begin
     }end;
   end;
 
-  //inherited Draw;
-  //heres a little Hack, that causes the Statics
-  //are Drawn after the Buttons because of some Blending Problems.
-  //This should cause no Problems because all Buttons on this screen
-  //Has Z Position.
-  //Draw BG
-  DrawBG;
-
-  // StaticsList
-  for I := 0 to High(StaticsList) do
-  begin
-    StaticsList[I].Draw;
-  end;
-
-  // Jukebox Playlist
-  if (Mode = smJukebox) then
-  begin
-    if Length(ScreenJukebox.JukeboxSongsList) > Theme.Song.TextMedleyMax then
-      J := Length(ScreenJukebox.JukeboxSongsList) - Theme.Song.TextMedleyMax
-    else
-      J := 0;
-
-    for I := 0 to Theme.Song.TextMedleyMax - 1 do
-    begin
-      if (Length(ScreenJukebox.JukeboxSongsList) > I + J) then
-      begin
-        Text[TextMedleyArtist[I]].Visible := true;
-        Text[TextMedleyTitle[I]].Visible  := true;
-        Text[TextMedleyNumber[I]].Visible := true;
-        Statics[StaticMedley[I]].Visible  := true;
-
-        Text[TextMedleyNumber[I]].Text := IntToStr(I + 1 + J);
-        Text[TextMedleyArtist[I]].Text := CatSongs.Song[ScreenJukebox.JukeboxSongsList[I + J]].Artist;
-        Text[TextMedleyTitle[I]].Text  := CatSongs.Song[ScreenJukebox.JukeboxSongsList[I + J]].Title;
-      end
-      else
-      begin
-        Text[TextMedleyArtist[I]].Visible := false;
-        Text[TextMedleyTitle[I]].Visible  := false;
-        Text[TextMedleyNumber[I]].Visible := false;
-        Statics[StaticMedley[I]].Visible  := false;
-      end;
-    end;
-  end
-  else
-  begin
-
-    //Medley Playlist
-    if Length(PlaylistMedley.Song) > Theme.Song.TextMedleyMax then
-      J := Length(PlaylistMedley.Song) - Theme.Song.TextMedleyMax
-    else
-      J := 0;
-
-    for I := 0 to Theme.Song.TextMedleyMax - 1 do
-    begin
-      if (Length(PlaylistMedley.Song) > I + J) and (MakeMedley) then
-      begin
-        Text[TextMedleyArtist[I]].Visible := true;
-        Text[TextMedleyTitle[I]].Visible  := true;
-        Text[TextMedleyNumber[I]].Visible := true;
-        Statics[StaticMedley[I]].Visible  := true;
-
-        Text[TextMedleyNumber[I]].Text := IntToStr(I + 1 + J);
-        Text[TextMedleyArtist[I]].Text := CatSongs.Song[PlaylistMedley.Song[I + J]].Artist;
-        Text[TextMedleyTitle[I]].Text  := CatSongs.Song[PlaylistMedley.Song[I + J]].Title;
-      end
-      else
-      begin
-        Text[TextMedleyArtist[I]].Visible := false;
-        Text[TextMedleyTitle[I]].Visible  := false;
-        Text[TextMedleyNumber[I]].Visible := false;
-        Statics[StaticMedley[I]].Visible  := false;
-      end;
-    end;
-  end;
-
-  if (TSongMenuMode(Ini.SongMenu) = smRoulette) then
-    VideoAlpha := Button[interaction].Texture.Alpha * (CoverTime-1)
-  else
-    VideoAlpha := 1;
-
-  //Instead of Draw FG Procedure:
-  //We draw Buttons for our own
-  for I := 0 to High(Button) do
-  begin
-    if (TSongMenuMode(Ini.SongMenu) in [smChessboard, smList]) or (((I<>Interaction) or not Assigned(fCurrentVideo) or (VideoAlpha<1) or FinishedMusic)) then
-    begin
-        // todo: there's probably a better way to set the selected one
-        //  but it's better than every not-yet-selected button being rendered as selected
-        Button[I].SetSelect(I = Interaction);
-        Button[I].Draw;
-    end;
-  end;
-
-  //  StopVideoPreview;
-
-  Position := AudioPlayback.Position;
-
-  if Assigned(fCurrentVideo) then
-  begin
-    // Just call this once
-    // when Screens = 2
-    if (ScreenAct = 1) then
-      fCurrentVideo.GetFrame(CatSongs.Song[Interaction].VideoGAP + Position);
-
-    fCurrentVideo.SetScreen(ScreenAct);
-    fCurrentVideo.Alpha := VideoAlpha;
-
-    //set up window
-    if (TSongMenuMode(Ini.SongMenu) in [smChessboard, smList]) then
-    begin
-        fCurrentVideo.SetScreenPosition(Theme.Song.Cover.SelectX, Theme.Song.Cover.SelectY, 1);
-        fCurrentVideo.Width := Theme.Song.Cover.SelectW;
-        fCurrentVideo.Height := Theme.Song.Cover.SelectH;
-
-        fCurrentVideo.ReflectionSpacing := Theme.Song.Cover.SelectReflectionSpacing;
-    end
-    else
-    begin
-      with Button[interaction] do
-      begin
-        fCurrentVideo.SetScreenPosition(X, Y, Z);
-        fCurrentVideo.Width := W;
-        fCurrentVideo.Height := H;
-        fCurrentVideo.ReflectionSpacing := Reflectionspacing;
-      end;
-    end;
-    if Button[interaction].Reflection or (Theme.Song.Cover.SelectReflection) then
-      fCurrentVideo.Reflection := true;
-
-    fCurrentVideo.AspectCorrection := acoCrop;
-
-    fCurrentVideo.Draw;
-  end;
-
-  // duet names
-  if (CatSongs.Song[Interaction].isDuet) then
-    ColorDuetNameSingers();
-
-  // Statics
-  for I := 0 to High(Statics) do
-    Statics[I].Draw;
-
-  // and texts
-  for I := 0 to High(Text) do
-    Text[I].Draw;
-
-  Equalizer.Draw;
-
-  DrawExtensions;
-
-  //if (Mode = smPartyTournament) then
-  //  PartyTimeLimit();
+  // ui-v2: the whole screen is drawn by DrawModern (Midnight design)
+  DrawModern;
 
   Result := true;
 end;
@@ -4548,6 +4426,403 @@ procedure TScreenSong.CloseMessage();
 begin
   Statics[InfoMessageBG].Visible := false;
   Text[InfoMessageText].Visible := false;
+end;
+
+
+{ =====================================================================
+  ui-v2: Midnight song browser
+  Left: big cover (or video preview), title, artist, details, Sing button.
+  Right: smooth-scrolling song list. Header: back, search, scoring switch.
+  Selection/scrolling logic is still the classic list mode
+  (Interaction, ListMinLine, SelectNextListRow ...), only drawing changed.
+  ===================================================================== }
+
+const
+  SB_PAD     = 56;
+  SB_TOP     = 104;   // top of the cover and the list
+  SB_BOTTOM  = 652;   // bottom of the list and the Sing button
+  SB_PANEL_W = 360;   // width of the left panel (cover is square)
+
+function TScreenSong.ModernListRect: TMRect;
+var
+  X: single;
+begin
+  X := SB_PAD + SB_PANEL_W + 40;
+  Result := MRect(X, SB_TOP, MUI_W - SB_PAD - X, SB_BOTTOM - SB_TOP);
+end;
+
+// 0 = back button, 1 = search pill, 2 = scoring switch
+function TScreenSong.ModernHeaderRect(Item: integer): TMRect;
+begin
+  case Item of
+    0: Result := MRect(SB_PAD, 34, 44, 44);
+    1: Result := MRect(MUI_W - SB_PAD - 240 - 12 - 176, 32, 176, 48);
+  else
+    Result := MRect(MUI_W - SB_PAD - 240, 32, 240, 48);
+  end;
+end;
+
+function TScreenSong.ModernSingRect: TMRect;
+begin
+  Result := MRect(SB_PAD, SB_BOTTOM - 56, SB_PANEL_W, 56);
+end;
+
+procedure TScreenSong.ToggleScoring;
+begin
+  if Boolean(Ini.KaraokeMode) then
+    Ini.KaraokeMode := 0
+  else
+    Ini.KaraokeMode := 1;
+  Ini.Save;
+end;
+
+procedure TScreenSong.ModernSelectSong(SongIdx: integer);
+begin
+  if (SongIdx = Interaction) then
+    Exit;
+  isScrolling := false;
+  OnSongDeSelect;
+  Interaction := SongIdx;
+  SetScrollRefresh;
+  LastSelectMouse := SDL_GetTicks;
+  LastSelectTime := SDL_GetTicks;
+end;
+
+// outlined detail chip; returns its width
+function ModernChip(X, Y: single; const Caption: UTF8String): single;
+begin
+  Result := MTextW(Caption, 14, false) + 24;
+  MStrokeRound(X, Y, Result, 30, 15, 1, mcBorder, 1);
+  MText(X + 12, Y + 8, Caption, 14, false, mcMuted, 1);
+end;
+
+procedure ModernCoverPlaceholder(X, Y, Size: single);
+begin
+  MFillRect(X, Y, Size, Size, mcSurface2, 1);
+  MIconNote(X + Size / 2, Y + Size / 2, Size * 0.4, mcBorder, 1);
+end;
+
+procedure TScreenSong.DrawModern;
+var
+  S:          TSong;
+  VS, Rows:   integer;
+  B, Line, SelLine, FirstLine, LastLine, N: integer;
+  LR, R, Cov, VR: TMRect;
+  RowH, Y, ChipX, TW, HY, CovS, TextX, TextW, ThumbH, SwX: single;
+  Tex:        TTexture;
+  Title, Caption, Lbl, Best: UTF8String;
+  IsCat, ScoringOn, Sel: boolean;
+  RowBg:      TMColor;
+  HX:         single;
+begin
+  VS := CatSongs.VisibleSongs;
+  Rows := Theme.Song.ListCover.Rows;
+  if (Rows < 1) then
+    Rows := 1;
+  ScoringOn := not Boolean(Ini.KaraokeMode);
+
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  { ---------- header ---------- }
+  R := ModernHeaderRect(0);
+  MFillCircle(R.X + 22, R.Y + 22, 22, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, 44, 44, 22, 1, mcBorder, 1);
+  MIconBack(R.X + 22, R.Y + 22, 24, mcText, 1);
+
+  case CatSongs.CatNumShow of
+    -2: Title := 'Search results';
+    -3: Title := 'Playlist';
+  else
+    if (Mode = smJukebox) then
+      Title := 'Add to jukebox'
+    else
+      Title := 'Choose a song';
+  end;
+  MText(SB_PAD + 64, 40, Title, 30, true, mcText, 1);
+  MText(SB_PAD + 64 + MTextW(Title, 30, true) + 16, 51, IntToStr(VS) + ' songs', 17, false, mcMuted, 1);
+
+  // search pill (opens the jump-to search)
+  R := ModernHeaderRect(1);
+  MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
+  MIconSearch(R.X + 26, R.Y + 24, 22, mcMuted, 1);
+  MText(R.X + 46, R.Y + 15, 'Search', 17, false, mcMuted, 1);
+  MFillRound(R.X + R.W - 42, R.Y + 11, 28, 26, 7, mcSurface2, 1);
+  MText(R.X + R.W - 28, R.Y + 16, 'J', 15, true, mcText, 1, mtaCenter);
+
+  // scoring switch
+  R := ModernHeaderRect(2);
+  MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
+  MText(R.X + 22, R.Y + 15, 'Scoring', 17, true, mcText, 1);
+  if ScoringOn then
+    MText(R.X + 30 + MTextW('Scoring', 17, true), R.Y + 15, 'On', 17, false, mcMuted, 1)
+  else
+    MText(R.X + 30 + MTextW('Scoring', 17, true), R.Y + 15, 'Off', 17, false, mcMuted, 1);
+  if ScoringOn then
+    MSwitch := MApproach(MSwitch, 1, 14)
+  else
+    MSwitch := MApproach(MSwitch, 0, 14);
+  SwX := R.X + R.W - 16 - 52;
+  MFillRound(SwX, R.Y + 10, 52, 28, 14, MLerpColor(mcBorder, mcAccent, MSwitch), 1);
+  MFillCircle(SwX + 14 + 24 * MSwitch, R.Y + 24, 10, MLerpColor(mcMuted, mcOnAccent, MSwitch), 1);
+
+  { ---------- left panel: selected song ---------- }
+  if (VS > 0) and (Interaction >= 0) and (Interaction <= High(CatSongs.Song)) then
+  begin
+    S := CatSongs.Song[Interaction];
+    IsCat := S.Main;
+
+    Cov := MRect(SB_PAD, SB_TOP, SB_PANEL_W, SB_PANEL_W);
+    Tex := Statics[StaticActual].Texture;
+    if (Tex <> nil) and (not Tex.IsEmpty) then
+      MDrawTex(Tex, Cov.X, Cov.Y, Cov.W, Cov.H, 1)
+    else
+      ModernCoverPlaceholder(Cov.X, Cov.Y, Cov.W);
+
+    // video preview plays inside the cover square
+    if Assigned(fCurrentVideo) and (not IsCat) then
+    begin
+      MEnd;
+      if (ScreenAct = 1) then
+        fCurrentVideo.GetFrame(S.VideoGAP + AudioPlayback.Position);
+      fCurrentVideo.SetScreen(ScreenAct);
+      VR := MVirtualToRender(Cov);
+      fCurrentVideo.SetScreenPosition(VR.X, VR.Y, 1);
+      fCurrentVideo.Width := VR.W;
+      fCurrentVideo.Height := VR.H;
+      fCurrentVideo.Reflection := false;
+      fCurrentVideo.AspectCorrection := acoCrop;
+      fCurrentVideo.Alpha := 1;
+      fCurrentVideo.Draw;
+      MBegin;
+    end;
+    MCornerMask(Cov.X, Cov.Y, Cov.W, Cov.H, 20, mcBg);
+
+    if IsCat then
+    begin
+      Title := S.Artist;
+      Caption := IntToStr(S.CatNumber) + ' songs';
+    end
+    else
+    begin
+      Title := S.Title;
+      Caption := S.Artist;
+    end;
+    MText(SB_PAD, SB_TOP + SB_PANEL_W + 16, Title, 32, true, mcText, 1, mtaLeft, SB_PANEL_W);
+    MText(SB_PAD, SB_TOP + SB_PANEL_W + 56, Caption, 19, false, mcMuted, 1, mtaLeft, SB_PANEL_W);
+
+    // detail chips
+    if not IsCat then
+    begin
+      ChipX := SB_PAD;
+      Y := SB_TOP + SB_PANEL_W + 90;
+      if (S.Year <> 0) then
+        ChipX := ChipX + ModernChip(ChipX, Y, IntToStr(S.Year)) + 8;
+      if S.isDuet then
+        ChipX := ChipX + ModernChip(ChipX, Y, 'Duet') + 8;
+      if S.Video.IsSet then
+        ChipX := ChipX + ModernChip(ChipX, Y, 'Video') + 8;
+      Best := Text[TextMaxScoreLocal].Text;
+      if ScoringOn and (Best <> '') and (Best <> '0') and
+         (ChipX + MTextW('Best ' + Best, 14, false) + 24 <= SB_PAD + SB_PANEL_W) then
+        ModernChip(ChipX, Y, 'Best ' + Best);
+    end;
+
+    // Sing button
+    R := ModernSingRect;
+    MFillRound(R.X, R.Y, R.W, R.H, 16, mcAccent, 1);
+    if IsCat then
+      Lbl := 'Open'
+    else if (Mode = smJukebox) then
+      Lbl := 'Play'
+    else if ScoringOn then
+      Lbl := 'Sing this'
+    else
+      Lbl := 'Sing (no scoring)';
+    TW := MTextW(Lbl, 22, true);
+    MIconPlay(R.X + R.W / 2 - TW / 2 - 16, R.Y + 28, 18, mcOnAccent, 1);
+    MText(R.X + R.W / 2 - TW / 2 + 4, R.Y + 17, Lbl, 22, true, mcOnAccent, 1);
+  end;
+
+  { ---------- right: song list ---------- }
+  LR := ModernListRect;
+  RowH := LR.H / Rows;
+  SetLength(MRowSong, 0);
+  SetLength(MRowRect, 0);
+
+  if (VS <= 0) then
+  begin
+    MText(LR.X + LR.W / 2, LR.Y + LR.H / 2 - 12, 'No songs here', 22, true, mcMuted, 1, mtaCenter);
+  end
+  else
+  begin
+    SelLine := CatSongs.VisibleIndex(Interaction);
+
+    if not MListReady then
+    begin
+      MListOffset := ListMinLine;
+      MHighlightC := SelLine * RowH;
+      MListReady := true;
+    end
+    else
+    begin
+      MListOffset := MApproach(MListOffset, ListMinLine, 16);
+      MHighlightC := MApproach(MHighlightC, SelLine * RowH, 20);
+    end;
+
+    FirstLine := Trunc(MListOffset) - 1;
+    LastLine := Trunc(MListOffset) + Rows + 1;
+
+    MClipBegin(LR);
+
+    // highlight glides behind the selected row
+    HY := LR.Y + MHighlightC - MListOffset * RowH;
+    MFillRound(LR.X, HY + 3, LR.W - 16, RowH - 6, 14, mcSurface2, 1);
+    MStrokeRound(LR.X, HY + 3, LR.W - 16, RowH - 6, 14, 1, mcText, 0.9);
+
+    CovS := RowH - 22;
+    if (CovS > 64) then
+      CovS := 64;
+
+    Line := 0;
+    for B := 0 to High(CatSongs.Song) do
+    begin
+      if not CatSongs.Song[B].Visible then
+        Continue;
+
+      if (Line >= FirstLine) and (Line <= LastLine) then
+      begin
+        S := CatSongs.Song[B];
+        Sel := (B = Interaction);
+        Y := LR.Y + (Line - MListOffset) * RowH;
+        R := MRect(LR.X, Y + 3, LR.W - 16, RowH - 6);
+
+        // remember rows for the mouse
+        N := Length(MRowSong);
+        SetLength(MRowSong, N + 1);
+        SetLength(MRowRect, N + 1);
+        MRowSong[N] := B;
+        MRowRect[N] := R;
+
+        if Sel then
+          RowBg := mcSurface2
+        else
+          RowBg := mcBg;
+
+        // cover thumbnail
+        Tex := Button[B].Texture;
+        HX := R.X + 12;
+        if (Tex <> nil) and (not Tex.IsEmpty) then
+          MDrawTex(Tex, HX, R.Y + (R.H - CovS) / 2, CovS, CovS, 1)
+        else
+          ModernCoverPlaceholder(HX, R.Y + (R.H - CovS) / 2, CovS);
+        MCornerMask(HX, R.Y + (R.H - CovS) / 2, CovS, CovS, 9, RowBg);
+
+        // texts
+        TextX := HX + CovS + 18;
+        TextW := R.X + R.W - TextX - 120;
+        if S.Main then
+        begin
+          MText(TextX, R.Y + R.H / 2 - 21, S.Artist, 18, true, mcText, 1, mtaLeft, TextW);
+          MText(TextX, R.Y + R.H / 2 + 2, IntToStr(S.CatNumber) + ' songs', 15, false, mcMuted, 1, mtaLeft, TextW);
+        end
+        else
+        begin
+          MText(TextX, R.Y + R.H / 2 - 21, S.Title, 18, true, mcText, 1, mtaLeft, TextW);
+          MText(TextX, R.Y + R.H / 2 + 2, S.Artist, 15, false, mcMuted, 1, mtaLeft, TextW);
+
+          // right side: duet chip and year
+          if (S.Year <> 0) then
+            MText(R.X + R.W - 18, R.Y + R.H / 2 - 9, IntToStr(S.Year), 15, false, mcMuted, 1, mtaRight);
+          if S.isDuet then
+            MStrokeRound(R.X + R.W - 120, R.Y + R.H / 2 - 13, 50, 26, 13, 1, mcBorder, 1);
+          if S.isDuet then
+            MText(R.X + R.W - 95, R.Y + R.H / 2 - 7, 'Duet', 13, false, mcMuted, 1, mtaCenter);
+        end;
+      end;
+
+      Inc(Line);
+      if (Line > LastLine) then
+        Break;
+    end;
+
+    MClipEnd;
+
+    // scrollbar
+    if (VS > Rows) then
+    begin
+      MFillRound(LR.X + LR.W - 5, LR.Y, 5, LR.H, 2.5, mcSurface, 1);
+      ThumbH := LR.H * Rows / VS;
+      if (ThumbH < 36) then
+        ThumbH := 36;
+      MFillRound(LR.X + LR.W - 5, LR.Y + (LR.H - ThumbH) * MListOffset / (VS - Rows), 5, ThumbH, 2.5, mcMuted, 1);
+    end;
+  end;
+
+  { ---------- footer: key hints ---------- }
+  HX := SB_PAD;
+  HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
+  HX := HX + MKeyHint(HX, 682, 'Enter', 'sing') + 22;
+  HX := HX + MKeyHint(HX, 682, 'K', 'scoring') + 22;
+  HX := HX + MKeyHint(HX, 682, 'J', 'search') + 22;
+  HX := HX + MKeyHint(HX, 682, 'M', 'more') + 22;
+  if (VS > 0) and CatSongs.Song[Interaction].isDuet then
+    HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
+  MKeyHint(HX, 682, 'Esc', 'back');
+
+  MEnd;
+
+  // info messages (medley etc.) and the song menu / jump-to popups
+  Statics[InfoMessageBG].Draw;
+  Text[InfoMessageText].Draw;
+  DrawExtensions;
+end;
+
+function TScreenSong.ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+begin
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  case MouseButton of
+    SDL_BUTTON_RIGHT:
+      Result := ParseInput(SDLK_ESCAPE, 0, true);
+    SDL_BUTTON_WHEELDOWN:
+      ParseInput(SDLK_DOWN, 0, true);
+    SDL_BUTTON_WHEELUP:
+      ParseInput(SDLK_UP, 0, true);
+    SDL_BUTTON_LEFT:
+      begin
+        MWindowToVirtual(X, Y, VX, VY);
+
+        if MHit(VX, VY, ModernHeaderRect(0)) then
+          Result := ParseInput(SDLK_ESCAPE, 0, true)
+        else if MHit(VX, VY, ModernHeaderRect(1)) then
+          ParseInput(SDLK_J, 0, true)
+        else if MHit(VX, VY, ModernHeaderRect(2)) then
+          ToggleScoring
+        else if MHit(VX, VY, ModernSingRect) then
+          Result := ParseInput(SDLK_RETURN, 0, true)
+        else if MHit(VX, VY, ModernListRect) then
+        begin
+          for I := 0 to High(MRowSong) do
+            if MHit(VX, VY, MRowRect[I]) then
+            begin
+              // first click selects, clicking the selected row starts it
+              if (MRowSong[I] = Interaction) then
+                Result := ParseInput(SDLK_RETURN, 0, true)
+              else
+                ModernSelectSong(MRowSong[I]);
+              Break;
+            end;
+        end;
+      end;
+  end;
 end;
 
 end.

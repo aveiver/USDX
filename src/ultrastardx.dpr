@@ -171,6 +171,7 @@ uses
   UMenuWidget            in 'menu\UMenuWidget.pas',
   UMenuEqualizer         in 'menu\UMenuEqualizer.pas',
   UMenuButtonCollection  in 'menu\UMenuButtonCollection.pas',
+  UModernUI              in 'menu\UModernUI.pas',
 
   UMenuBackground        in 'menu\UMenuBackground.pas',
   UMenuBackgroundNone    in 'menu\UMenuBackgroundNone.pas',
