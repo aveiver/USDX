@@ -52,6 +52,9 @@ type
       DiscoveryBarAlpha: real;
       LoadingBarAlpha: real;
       LastRedrawTicks: cardinal;
+      // ui-v2: progress shown by the Midnight loading screen
+      DiscoveryProgress: real;
+      LoadingProgress: real;
       function ClampProgress(Current, Total: integer): real;
       function AddProgressOverlay(SourceBarIndex: integer; Alpha: real): integer;
       procedure UpdateBar(BaseBarIndex, FillBarIndex: integer; Progress, BaseAlpha, FillAlpha: real);
@@ -67,6 +70,7 @@ type
       procedure SetSongLoadingProgress(Current, Total: integer);
       procedure SetStatus(const Value: UTF8String);
       procedure RefreshProgress(Force: boolean = false);
+      function Draw: boolean; override;
   end;
 
 implementation
@@ -74,6 +78,7 @@ implementation
 uses
   UGraphic,
   UDisplay,
+  UModernUI,
   URenderer,
   UTime;
 
@@ -126,6 +131,8 @@ begin
   end;
 
   LastRedrawTicks := 0;
+  DiscoveryProgress := 0;
+  LoadingProgress := 0;
   UpdateBar(DiscoveryBarBaseIndex, DiscoveryBarFillIndex, 0, DiscoveryBarAlpha * 0.5, DiscoveryBarAlpha);
   UpdateBar(LoadingBarBaseIndex, LoadingBarFillIndex, 0, LoadingBarAlpha * 0.5, LoadingBarAlpha);
   UpdateStatus('');
@@ -196,6 +203,7 @@ end;
 
 procedure TScreenLoading.SetDiscoveryProgress(Current, Total, SongsFound: integer);
 begin
+  DiscoveryProgress := ClampProgress(Current, Total);
   UpdateBar(DiscoveryBarBaseIndex, DiscoveryBarFillIndex, ClampProgress(Current, Total), DiscoveryBarAlpha * 0.5, DiscoveryBarAlpha);
   if SongsFound > 0 then
     UpdateStatus(Format('0 / %5d', [SongsFound]))
@@ -206,6 +214,7 @@ end;
 
 procedure TScreenLoading.SetSongLoadingProgress(Current, Total: integer);
 begin
+  LoadingProgress := ClampProgress(Current, Total);
   UpdateBar(LoadingBarBaseIndex, LoadingBarFillIndex, ClampProgress(Current, Total), LoadingBarAlpha * 0.5, LoadingBarAlpha);
   if Total > 0 then
     UpdateStatus(Format('%5d / %5d', [Current, Total]))
@@ -236,6 +245,43 @@ begin
   Display.Draw;
   Renderer.SwapBuffers;
   LastRedrawTicks := NowTicks;
+end;
+
+// ui-v2: Midnight loading screen (replaces the theme's loading screen)
+function TScreenLoading.Draw: boolean;
+var
+  CX, W, BarW, BarX, BarY, P: single;
+  Status: UTF8String;
+begin
+  MBegin;
+
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  CX := MUI_W / 2;
+  W := MTextW('UltraStar', 44, true);
+  MIconMic(CX - W / 2 - 14, 330, 44, mcAccent, 1);
+  MText(CX - W / 2 + 18, 306, 'UltraStar', 44, true, mcText, 1);
+
+  // one bar: finding songs fills the first 30%, loading them the rest
+  if (LoadingProgress > 0) then
+    P := 0.3 + 0.7 * LoadingProgress
+  else
+    P := 0.3 * DiscoveryProgress;
+  BarW := 420;
+  BarX := CX - BarW / 2;
+  BarY := 396;
+  MFillRound(BarX, BarY, BarW, 8, 4, mcSurface, 1);
+  if (P > 0.02) then
+    MFillRound(BarX, BarY, BarW * P, 8, 4, mcAccent, 1);
+
+  if (StatusTextIndex >= 0) and (StatusTextIndex < Length(Text)) then
+    Status := Text[StatusTextIndex].Text
+  else
+    Status := '';
+  MText(CX, 424, Status, 16, false, mcMuted, 1, mtaCenter, BarW + 200);
+
+  MEnd;
+  Result := true;
 end;
 
 end.

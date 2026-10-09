@@ -2098,10 +2098,12 @@ begin
   // Freetype stores the bitmap with either upper (pitch is > 0) or lower
   // (pitch < 0) glyphs line first. Set the buffer to the upper line.
   // See http://freetype.sourceforge.net/freetype2/docs/glyphs/glyphs-7.html
+  // ui-v2: use pointer arithmetic here. Indexing a PByteArray (max 32767)
+  // raised a range check error for big glyphs (e.g. 256px high-res fonts).
   if (Bitmap.pitch > 0) then
-    BitmapBuffer := @Bitmap.buffer[0]
+    BitmapBuffer := PByteArray(Bitmap.buffer)
   else
-    BitmapBuffer := @Bitmap.buffer[(Bitmap.rows-1) * Abs(Bitmap.pitch)];
+    BitmapBuffer := PByteArray(PByte(Bitmap.buffer) + PtrInt(Bitmap.rows-1) * Abs(Bitmap.pitch));
 
   // copy data to texture bitmap (upper line first).
   for Y := 0 to Bitmap.rows-1 do
@@ -2113,7 +2115,7 @@ begin
                           cTexSmoothBorder + Ceil(fOutset)];
     // get next lower line offset, use pitch instead of width as it tells
     // us the storage direction of the lines. In addition a line might be padded.
-    BitmapLine := @BitmapBuffer[Y * Bitmap.pitch];
+    BitmapLine := PByteArray(PByte(BitmapBuffer) + PtrInt(Y) * Bitmap.pitch);
 
     // check for pixel mode and copy pixels
     // Should be 8 bit gray, but even with FT_RENDER_MODE_NORMAL, freetype
