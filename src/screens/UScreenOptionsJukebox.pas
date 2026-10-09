@@ -660,6 +660,8 @@ var
   ButtonExit: TButton;
 begin
   inherited Create;
+  // ui-v2: this page draws extra things at the old layout positions, keep the classic look for now
+  ModernDraw := false;
   Description := Language.Translate('SING_OPTIONS_JUKEBOX_DESC');
   WhereAmI := Language.Translate('SING_OPTIONS_JUKEBOX_WHEREAMI');
   Load;

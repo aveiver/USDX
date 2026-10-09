@@ -46,6 +46,7 @@ uses
   UMenuStatic,
   UMenuText,
   UMenuWidget,
+  UModernUI,
   UMusic,
   URenderer,
   UThemes;
@@ -220,10 +221,21 @@ type
   end;
 
 TOptionsMenu = class(TMenu)
+  private
+    // ui-v2 (Midnight) state
+    FTitle: UTF8String;
+    FScroll: single;
+    FScrollAnim: single;
+    FRowRects: array of TMRect;
+    FBackRect: TMRect;
+    procedure DrawModern;
   protected
     YNextWidget: integer; // Y coordinate of the next settings widget in the menu
     Description: AnsiString;
     WhereAmI:    AnsiString;
+    // ui-v2: draw in the Midnight style. Screens with their own extra
+    // drawing (record meters, webcam preview, colour pickers) turn this off.
+    ModernDraw:  boolean;
     procedure Load;
     procedure LoadWidgets; virtual; abstract;
     procedure LoadLegend; virtual;
@@ -234,6 +246,8 @@ TOptionsMenu = class(TMenu)
     destructor Destroy; override;
     constructor Create; overload; override;
     function DrawFG: boolean; override;
+    function Draw: boolean; override;
+    function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
 end;
 
 function RGBFloatToInt(R, G, B: double): cardinal;
@@ -2086,6 +2100,9 @@ end;
 constructor TOptionsMenu.Create;
 begin
   inherited;
+  ModernDraw := true;
+  FScroll := 0;
+  FScrollAnim := 0;
 end;
 
 destructor TOptionsMenu.Destroy;
@@ -2121,6 +2138,7 @@ begin
   ThemeText := Theme.OptionsSub.TextWhereAmI;
   ThemeText.Text := WhereAmI;
   AddText(ThemeText);
+  FTitle := Description;
   Description := '';
   WhereAmI := '';
 
@@ -2218,6 +2236,199 @@ begin
   if (Scrollable) then
     ScrollBar.Draw;
   Result := true;
+end;
+
+{ ui-v2: Midnight options page }
+
+const
+  OPT_PAD    = 56;
+  OPT_TOP    = 112;
+  OPT_BOTTOM = 640;
+  OPT_ROW_H  = 62;
+  OPT_GAP    = 10;
+
+function TOptionsMenu.Draw: boolean;
+begin
+  if not ModernDraw then
+  begin
+    Result := inherited Draw;
+    Exit;
+  end;
+  DrawModern;
+  Result := true;
+end;
+
+procedure TOptionsMenu.DrawModern;
+var
+  I, N, Row, SelRow: integer;
+  W, Y, ViewH, RowTop, VW, HX: single;
+  R: TMRect;
+  Lbl, Val: UTF8String;
+  SS: TSelectSlide;
+  Shown: boolean;
+begin
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  // header
+  FBackRect := MRect(OPT_PAD, 34, 44, 44);
+  MFillCircle(OPT_PAD + 22, 56, 22, mcSurface, 1);
+  MStrokeRound(OPT_PAD, 34, 44, 44, 22, 1, mcBorder, 1);
+  MIconBack(OPT_PAD + 22, 56, 24, mcText, 1);
+  MText(OPT_PAD + 64, 40, FTitle, 30, true, mcText, 1, mtaLeft, MUI_W - 2 * OPT_PAD - 64);
+
+  N := Length(Interactions);
+  SetLength(FRowRects, N);
+  W := MUI_W - 2 * OPT_PAD;
+  if (W > 960) then
+    W := 960;
+  ViewH := OPT_BOTTOM - OPT_TOP;
+
+  // which visual row is selected (hidden widgets take no space)
+  Row := 0;
+  SelRow := 0;
+  for I := 0 to N - 1 do
+  begin
+    if (I = Interaction) then
+      SelRow := Row;
+    case Interactions[I].Typ of
+      iSelectS: Shown := SelectsS[Interactions[I].Num].Visible;
+      iButton:  Shown := Button[Interactions[I].Num].Visible;
+    else
+      Shown := false;
+    end;
+    if Shown then
+      Inc(Row);
+  end;
+
+  // keep the selected row in view
+  RowTop := SelRow * (OPT_ROW_H + OPT_GAP);
+  if (RowTop < FScroll) then
+    FScroll := RowTop;
+  if (RowTop + OPT_ROW_H > FScroll + ViewH) then
+    FScroll := RowTop + OPT_ROW_H - ViewH;
+  FScrollAnim := MApproach(FScrollAnim, FScroll, 16);
+
+  MClipBegin(MRect(OPT_PAD - 10, OPT_TOP - 8, W + 20, ViewH + 16));
+  Row := 0;
+  for I := 0 to N - 1 do
+  begin
+    FRowRects[I] := MRect(0, 0, 0, 0);
+    case Interactions[I].Typ of
+      iSelectS: Shown := SelectsS[Interactions[I].Num].Visible;
+      iButton:  Shown := Button[Interactions[I].Num].Visible;
+    else
+      Shown := false;
+    end;
+    if not Shown then
+      Continue;
+
+    Y := OPT_TOP + Row * (OPT_ROW_H + OPT_GAP) - FScrollAnim;
+    R := MRect(OPT_PAD, Y, W, OPT_ROW_H);
+    FRowRects[I] := R;
+    Inc(Row);
+
+    if (I = Interaction) then
+    begin
+      MFillRound(R.X, R.Y, R.W, R.H, 16, mcSurface2, 1);
+      MStrokeRound(R.X, R.Y, R.W, R.H, 16, 2, mcText, 1);
+    end
+    else
+      MFillRound(R.X, R.Y, R.W, R.H, 16, mcSurface, 1);
+
+    if (Interactions[I].Typ = iSelectS) then
+    begin
+      SS := SelectsS[Interactions[I].Num];
+      Lbl := SS.Text.Text;
+      Val := '';
+      if (SS.SelectOptInt >= 0) and (SS.SelectOptInt <= High(SS.TextOptT)) then
+        Val := SS.TextOptT[SS.SelectOptInt];
+
+      MText(R.X + 24, R.Y + 21, Lbl, 19, false, mcText, 1, mtaLeft, R.W * 0.5 - 30);
+
+      VW := MTextW(Val, 19, true);
+      if (VW > R.W * 0.4) then
+        VW := R.W * 0.4;
+      HX := R.X + R.W - 34;
+      MIconForward(HX, R.Y + R.H / 2, 20, mcMuted, 1);
+      MText(HX - 20, R.Y + 20, Val, 19, true, mcAccent, 1, mtaRight, R.W * 0.4);
+      MIconBack(HX - 20 - VW - 18, R.Y + R.H / 2, 20, mcMuted, 1);
+    end
+    else
+    begin
+      Lbl := '';
+      if (Length(Button[Interactions[I].Num].Text) > 0) then
+        Lbl := Button[Interactions[I].Num].Text[0].Text;
+      MText(R.X + 24, R.Y + 20, Lbl, 19, true, mcText, 1, mtaLeft, R.W - 80);
+      MIconForward(R.X + R.W - 34, R.Y + R.H / 2, 20, mcMuted, 1);
+    end;
+  end;
+  MClipEnd;
+
+  // footer
+  HX := OPT_PAD;
+  HX := HX + MKeyHint(HX, 682, 'Up/Down', 'choose') + 22;
+  HX := HX + MKeyHint(HX, 682, 'Left/Right', 'change') + 22;
+  MKeyHint(HX, 682, 'Esc', 'back');
+
+  MEnd;
+end;
+
+function TOptionsMenu.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+  R: TMRect;
+begin
+  if not ModernDraw then
+  begin
+    Result := inherited ParseMouse(MouseButton, BtnDown, X, Y);
+    Exit;
+  end;
+
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  case MouseButton of
+    SDL_BUTTON_RIGHT:
+      Result := ParseInput(SDLK_ESCAPE, 0, true);
+    SDL_BUTTON_WHEELDOWN:
+      Result := ParseInput(SDLK_DOWN, 0, true);
+    SDL_BUTTON_WHEELUP:
+      Result := ParseInput(SDLK_UP, 0, true);
+    SDL_BUTTON_LEFT:
+      begin
+        MWindowToVirtual(X, Y, VX, VY);
+        if MHit(VX, VY, FBackRect) then
+        begin
+          Result := ParseInput(SDLK_ESCAPE, 0, true);
+          Exit;
+        end;
+        if (VY < OPT_TOP - 8) or (VY > OPT_BOTTOM + 8) then
+          Exit;
+        for I := 0 to High(FRowRects) do
+        begin
+          R := FRowRects[I];
+          if (R.W > 0) and MHit(VX, VY, R) then
+          begin
+            if (I <> Interaction) then
+              SetInteraction(I);
+            if (Interactions[I].Typ = iSelectS) then
+            begin
+              // right end steps forward, the value area steps back
+              if (VX >= R.X + R.W - 60) then
+                Result := ParseInput(SDLK_RIGHT, 0, true)
+              else if (VX >= R.X + R.W * 0.5) then
+                Result := ParseInput(SDLK_LEFT, 0, true);
+            end
+            else
+              Result := ParseInput(SDLK_RETURN, 0, true);
+            Exit;
+          end;
+        end;
+      end;
+  end;
 end;
 
 end.

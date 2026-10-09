@@ -38,6 +38,7 @@ uses
   UDLLManager,
   UIni,
   UMenu,
+  UModernUI,
   UMusic,
   URenderer,
   USongs,
@@ -203,6 +204,10 @@ type
       { for player static texture swapping }
       procedure LoadSwapTextures;
       procedure SwapToScreen(Screen: integer);
+
+      // ui-v2 (Midnight)
+      procedure UpdateCounters;
+      procedure DrawModern;
     public
       constructor Create; override;
       destructor Destroy; override;
@@ -1399,36 +1404,12 @@ begin
   if (ScreenSong.Mode = smMedley) then
     BarTime := 0;
 
-  // swap static textures to current screen ones
-  SwapToScreen(ScreenAct);
-
-  //Draw the Background
-  DrawBG;
-
-  // Let's start to arise the bars
+  // ui-v2: keep the original count-up timing, draw the Midnight results
   UpdateAnimation;
+  if ShowFinish then
+    UpdateCounters;
+  DrawModern;
 
-  if (ShowFinish) then
-    DrawPlayerBars;
-
-
-
-(*
-    //todo: i need a clever method to draw statics with their z value
-    for I := 0 to High(Statics) do
-      Statics[I].Draw;
-    for I := 0 to High(Text) do
-      Text[I].Draw;
-*)
-
-  // we have to swap the themeobjects values on every draw
-  // to support dual screen
-  for PlayerCounter := 1 to PlayersPlay do       //TODO: adapt for players 7 to 12
-  begin
-    FillPlayerItems(PlayerCounter);
-  end;
-   //Draw Theme Objects
-  DrawFG;
   Result := true;
 end;
 
@@ -1884,5 +1865,186 @@ begin
 
 end;
 
+
+{ =====================================================================
+  ui-v2: Midnight results screen
+  A card per singer: avatar, name, big total that counts up, rating,
+  a stacked bar (notes / line bonus / golden notes) and the breakdown.
+  ===================================================================== }
+
+const
+  SC_PAD = 56;
+
+// count the numbers up in the same order as the old bars
+procedure TScreenScore.UpdateCounters;
+var
+  I: integer;
+begin
+  for I := 1 to PlayersPlay do
+  begin
+    if (BarScore_EaseOut_Step >= (EaseOut_MaxSteps * 10)) then
+    begin
+      if (BarPhrase_EaseOut_Step >= (EaseOut_MaxSteps * 10)) then
+        EaseScoreIn(I, sbtGolden);
+      EaseScoreIn(I, sbtLine);
+    end;
+    EaseScoreIn(I, sbtScore);
+  end;
+end;
+
+function ScoreRatingText(Total: integer): UTF8String;
+begin
+  case Total of
+    0..2009:    Result := Language.Translate('SING_SCORE_TONE_DEAF');
+    2010..4009: Result := Language.Translate('SING_SCORE_AMATEUR');
+    4010..5009: Result := Language.Translate('SING_SCORE_WANNABE');
+    5010..6009: Result := Language.Translate('SING_SCORE_HOPEFUL');
+    6010..7509: Result := Language.Translate('SING_SCORE_RISING_STAR');
+    7510..8509: Result := Language.Translate('SING_SCORE_LEAD_SINGER');
+    8510..9009: Result := Language.Translate('SING_SCORE_SUPERSTAR');
+  else
+    Result := Language.Translate('SING_SCORE_ULTRASTAR');
+  end;
+end;
+
+procedure TScreenScore.DrawModern;
+var
+  I, N, Best, BestTotal, Total, Notes, Line, Golden: integer;
+  CardW, CardH, X, Y, BarW, AvS, Seg, A1, A2, A3, BigSize: single;
+  R: TMRect;
+  Tex: TTexture;
+  PC, Gold, LineCol: TMColor;
+  Done: boolean;
+  Title, Sub: UTF8String;
+begin
+  N := PlayersPlay;
+  if (N < 1) then
+    N := 1;
+  Gold := MColor($F5C542);
+  LineCol := MColor($8FB3FF);
+
+  // fade-in of each part follows the old animation steps (0..100)
+  A1 := BarScore_EaseOut_Step / 100;
+  A2 := BarPhrase_EaseOut_Step / 100;
+  A3 := BarGolden_EaseOut_Step / 100;
+  if (A1 > 1) then A1 := 1;
+  if (A2 > 1) then A2 := 1;
+  if (A3 > 1) then A3 := 1;
+  Done := (BarGolden_EaseOut_Step >= 100);
+
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  // header: song
+  Title := '';
+  Sub := '';
+  if (CurrentSong <> nil) then
+  begin
+    Title := CurrentSong.Title;
+    Sub := CurrentSong.Artist;
+  end;
+  MText(SC_PAD, 40, Title, 30, true, mcText, 1, mtaLeft, MUI_W - 2 * SC_PAD - 200);
+  MText(SC_PAD, 80, Sub, 18, false, mcMuted, 1, mtaLeft, MUI_W - 2 * SC_PAD - 200);
+  MText(MUI_W - SC_PAD, 48, 'Results', 18, true, mcAccent, 1, mtaRight);
+
+  // who won (only once the counting is finished)
+  Best := -1;
+  BestTotal := -1;
+  if Done and (PlayersPlay > 1) then
+    for I := 0 to PlayersPlay - 1 do
+      if (Player[I].ScoreTotalInt > BestTotal) then
+      begin
+        BestTotal := Player[I].ScoreTotalInt;
+        Best := I;
+      end;
+
+  // cards
+  CardW := (MUI_W - 2 * SC_PAD - (N - 1) * 20) / N;
+  if (CardW > 360) then
+    CardW := 360;
+  CardH := 470;
+  X := (MUI_W - (N * CardW + (N - 1) * 20)) / 2;
+  Y := 140;
+  if (N >= 4) then
+    BigSize := 40
+  else
+    BigSize := 56;
+
+  for I := 0 to PlayersPlay - 1 do
+  begin
+    R := MRect(X + I * (CardW + 20), Y, CardW, CardH);
+    MFillRound(R.X, R.Y, R.W, R.H, 24, mcSurface, 1);
+    if (I = Best) then
+      MStrokeRound(R.X - 6, R.Y - 6, R.W + 12, R.H + 12, 30, 3, mcAccent, 1)
+    else
+      MStrokeRound(R.X, R.Y, R.W, R.H, 24, 1, mcBorder, 1);
+
+    // avatar + name
+    AvS := 64;
+    Tex := AvatarPlayerTextures[I + 1];
+    if (Tex <> nil) then
+    begin
+      PC.R := Tex.ColR; PC.G := Tex.ColG; PC.B := Tex.ColB;
+      MFillRect(R.X + 24, R.Y + 24, AvS, AvS, mcBg, 1);
+      MDrawTexTint(Tex, R.X + 24, R.Y + 24, AvS, AvS, 1, PC);
+      MCornerMask(R.X + 24, R.Y + 24, AvS, AvS, 12, mcSurface);
+    end;
+    MText(R.X + 24 + AvS + 16, R.Y + 30, Player[I].Name, 22, true, mcText, 1, mtaLeft, R.W - AvS - 64);
+    if (I = Best) then
+      MText(R.X + 24 + AvS + 16, R.Y + 62, 'Winner', 16, true, mcAccent, 1)
+    else
+      MText(R.X + 24 + AvS + 16, R.Y + 62, 'P' + IntToStr(I + 1), 16, false, mcMuted, 1);
+
+    // big total that counts up
+    Notes := TextScore_ActualValue[I + 1];
+    Line := TextPhrase_ActualValue[I + 1];
+    Golden := TextGolden_ActualValue[I + 1];
+    Total := Notes + Line + Golden;
+    MText(R.X + 24, R.Y + 120, IntToStr(Total), BigSize, true, mcText, A1, mtaLeft, R.W - 48);
+
+    // rating once everything has counted in
+    if Done then
+      MText(R.X + 24, R.Y + 128 + BigSize, ScoreRatingText(Player[I].ScoreTotalInt), 20, true, mcAccent, 1, mtaLeft, R.W - 48);
+
+    // stacked bar out of the 10000 maximum
+    BarW := R.W - 48;
+    MFillRound(R.X + 24, R.Y + 230, BarW, 12, 6, mcSurface2, 1);
+    Seg := BarW * Notes / MAX_SONG_SCORE;
+    if (Seg > 1) then
+      MFillRect(R.X + 24, R.Y + 230, Seg, 12, mcAccent, A1);
+    X := R.X + 24 + Seg;
+    Seg := BarW * Line / MAX_SONG_SCORE;
+    if (Seg > 1) then
+      MFillRect(X, R.Y + 230, Seg, 12, LineCol, A2);
+    X := X + Seg;
+    Seg := BarW * Golden / MAX_SONG_SCORE;
+    if (Seg > 1) then
+      MFillRect(X, R.Y + 230, Seg, 12, Gold, A3);
+    MCornerMask(R.X + 24, R.Y + 230, BarW, 12, 6, mcSurface);
+    X := (MUI_W - (N * CardW + (N - 1) * 20)) / 2;
+
+    // breakdown
+    MFillCircle(R.X + 30, R.Y + 286, 5, mcAccent, A1);
+    MText(R.X + 44, R.Y + 276, Language.Translate('SING_NOTES'), 18, false, mcMuted, A1, mtaLeft, R.W - 150);
+    MText(R.X + R.W - 24, R.Y + 276, IntToStr(Notes), 18, true, mcText, A1, mtaRight);
+
+    MFillCircle(R.X + 30, R.Y + 326, 5, LineCol, A2);
+    MText(R.X + 44, R.Y + 316, Language.Translate('SING_PHRASE_BONUS'), 18, false, mcMuted, A2, mtaLeft, R.W - 150);
+    MText(R.X + R.W - 24, R.Y + 316, IntToStr(Line), 18, true, mcText, A2, mtaRight);
+
+    MFillCircle(R.X + 30, R.Y + 366, 5, Gold, A3);
+    MText(R.X + 44, R.Y + 356, Language.Translate('SING_GOLDEN_NOTES'), 18, false, mcMuted, A3, mtaLeft, R.W - 150);
+    MText(R.X + R.W - 24, R.Y + 356, IntToStr(Golden), 18, true, mcText, A3, mtaRight);
+  end;
+
+  // footer
+  X := SC_PAD;
+  if Done then
+    MKeyHint(X, 682, 'Enter', 'continue')
+  else
+    MKeyHint(X, 682, 'Enter', 'skip');
+
+  MEnd;
+end;
 
 end.

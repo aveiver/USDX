@@ -1191,7 +1191,10 @@ begin
     FRingW := MApproach(FRingW, Ring.W, 16);
     FRingH := MApproach(FRingH, Ring.H, 16);
   end;
-  if (FRow = 1) then
+  if (FRow = 0) then
+    // match the rounded-square number pills
+    MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 22, 3, mcText, 1)
+  else if (FRow = 1) then
     MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 26, 3, mcText, 1)
   else
     MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, (FRingH + 12) / 2, 3, mcText, 1);

@@ -68,11 +68,15 @@ type
       MListReady:   boolean;
       MRowSong:     array of integer;  // song index per drawn row (for the mouse)
       MRowRect:     array of TMRect;   // row rectangles (virtual canvas)
+      MSearchActive: boolean;          // typing into the header search box
+      MSearchText:  UTF8String;
 
       function ModernListRect: TMRect;
       function ModernHeaderRect(Item: integer): TMRect;
       function ModernSingRect: TMRect;
       procedure ModernSelectSong(SongIdx: integer);
+      procedure ModernApplySearch;
+      procedure ModernSearchFocus(Active: boolean);
       procedure DrawModern;
       function ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
     public
@@ -721,6 +725,46 @@ begin
     Exit;
   end;
 
+  // ui-v2: while the search box is focused, keys go to it
+  if MSearchActive and PressedDown then
+  begin
+    if IsPrintableChar(CharCode) then
+    begin
+      MSearchText := MSearchText + UCS4ToUTF8String(CharCode);
+      ModernApplySearch;
+      Exit;
+    end;
+    case PressedKey of
+      SDLK_BACKSPACE:
+        begin
+          if (LengthUTF8(MSearchText) > 0) then
+          begin
+            MSearchText := UTF8Copy(MSearchText, 1, LengthUTF8(MSearchText) - 1);
+            ModernApplySearch;
+          end;
+          Exit;
+        end;
+      SDLK_ESCAPE:
+        begin
+          // clear the search and show everything again
+          MSearchText := '';
+          ModernApplySearch;
+          ModernSearchFocus(false);
+          Exit;
+        end;
+      SDLK_RETURN, SDLK_TAB:
+        begin
+          // keep the results, go back to the list
+          ModernSearchFocus(false);
+          Exit;
+        end;
+      SDLK_UP, SDLK_DOWN, SDLK_PAGEUP, SDLK_PAGEDOWN:
+        ModernSearchFocus(false); // and fall through to normal navigation
+    else
+      Exit; // swallow shortcut keys (K, M, R...) while typing
+    end;
+  end;
+
   if (PressedDown) then
   begin // Key Down
 
@@ -955,12 +999,10 @@ begin
           Exit;
         end;
 
-      SDLK_J: //Show Jumpto Menu
+      SDLK_J: // ui-v2: type straight into the search box in the header
         begin
           if (Songs.SongList.Count > 0) and (FreeListMode) then
-          begin
-            ScreenSongJumpto.Visible := true;
-          end;
+            ModernSearchFocus(true);
           Exit;
         end;
 
@@ -2905,6 +2947,9 @@ begin
   inherited;
 
   MListReady := false;
+  MSearchActive := false;
+  if (CatSongs.CatNumShow <> -2) then
+    MSearchText := '';
 
   CloseMessage();
 
@@ -4456,7 +4501,7 @@ function TScreenSong.ModernHeaderRect(Item: integer): TMRect;
 begin
   case Item of
     0: Result := MRect(SB_PAD, 34, 44, 44);
-    1: Result := MRect(MUI_W - SB_PAD - 240 - 12 - 176, 32, 176, 48);
+    1: Result := MRect(MUI_W - SB_PAD - 240 - 12 - 300, 32, 300, 48);
   else
     Result := MRect(MUI_W - SB_PAD - 240, 32, 240, 48);
   end;
@@ -4474,6 +4519,41 @@ begin
   else
     Ini.KaraokeMode := 1;
   Ini.Save;
+end;
+
+procedure TScreenSong.ModernSearchFocus(Active: boolean);
+begin
+  MSearchActive := Active;
+  if Active then
+    SetTextInput(true)
+  else
+    StopTextInput;
+end;
+
+// filter the list live as the search text changes (same steps as the old jump-to popup)
+procedure TScreenSong.ModernApplySearch;
+begin
+  if (Trim(MSearchText) = '') then
+  begin
+    CatSongs.SetFilter('', fltAll);
+    HideCatTL;
+  end
+  else
+    CatSongs.SetFilter(MSearchText, fltAll);
+
+  NextRandomSearchIdx := CatSongs.VisibleSongs;
+
+  Interaction := 0;
+  ChessboardMinLine := 0;
+  ListMinLine := 0;
+  if (CatSongs.VisibleSongs > 0) then
+  begin
+    SelectNext;
+    FixSelected;
+  end;
+  SetScrollRefresh;
+  ChangeMusic;
+  MListReady := false;
 end;
 
 procedure TScreenSong.ModernSelectSong(SongIdx: integer);
@@ -4514,6 +4594,7 @@ var
   IsCat, ScoringOn, Sel: boolean;
   RowBg:      TMColor;
   HX:         single;
+  TitleSize:  single;
 begin
   VS := CatSongs.VisibleSongs;
   Rows := Theme.Song.ListCover.Rows;
@@ -4542,14 +4623,32 @@ begin
   MText(SB_PAD + 64, 40, Title, 30, true, mcText, 1);
   MText(SB_PAD + 64 + MTextW(Title, 30, true) + 16, 51, IntToStr(VS) + ' songs', 17, false, mcMuted, 1);
 
-  // search pill (opens the jump-to search)
+  // search box: J or a click focuses it, then just type
+  if (CatSongs.CatNumShow <> -2) and not MSearchActive then
+    MSearchText := '';
   R := ModernHeaderRect(1);
   MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcSurface, 1);
-  MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
+  if MSearchActive then
+    MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 2, mcAccent, 1)
+  else
+    MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
   MIconSearch(R.X + 26, R.Y + 24, 22, mcMuted, 1);
-  MText(R.X + 46, R.Y + 15, 'Search', 17, false, mcMuted, 1);
-  MFillRound(R.X + R.W - 42, R.Y + 11, 28, 26, 7, mcSurface2, 1);
-  MText(R.X + R.W - 28, R.Y + 16, 'J', 15, true, mcText, 1, mtaCenter);
+  if (MSearchText <> '') then
+    MText(R.X + 46, R.Y + 15, MSearchText, 17, true, mcText, 1, mtaLeft, R.W - 64)
+  else if not MSearchActive then
+    MText(R.X + 46, R.Y + 15, 'Search', 17, false, mcMuted, 1);
+  if MSearchActive and ((SDL_GetTicks div 500) mod 2 = 0) then
+  begin
+    TW := MTextW(MSearchText, 17, true);
+    if (TW > R.W - 64) then
+      TW := R.W - 64;
+    MFillRect(R.X + 48 + TW, R.Y + 13, 2, 22, mcAccent, 1);
+  end;
+  if not MSearchActive and (MSearchText = '') then
+  begin
+    MFillRound(R.X + R.W - 42, R.Y + 11, 28, 26, 7, mcSurface2, 1);
+    MText(R.X + R.W - 28, R.Y + 16, 'J', 15, true, mcText, 1, mtaCenter);
+  end;
 
   // scoring switch
   R := ModernHeaderRect(2);
@@ -4610,7 +4709,11 @@ begin
       Title := S.Title;
       Caption := S.Artist;
     end;
-    MText(SB_PAD, SB_TOP + SB_PANEL_W + 16, Title, 32, true, mcText, 1, mtaLeft, SB_PANEL_W);
+    // shrink long titles to fit the panel before falling back to "..."
+    TitleSize := 32;
+    while (TitleSize > 20) and (MTextW(Title, TitleSize, true) > SB_PANEL_W) do
+      TitleSize := TitleSize - 2;
+    MText(SB_PAD, SB_TOP + SB_PANEL_W + 16 + (32 - TitleSize) * 0.6, Title, TitleSize, true, mcText, 1, mtaLeft, SB_PANEL_W);
     MText(SB_PAD, SB_TOP + SB_PANEL_W + 56, Caption, 19, false, mcMuted, 1, mtaLeft, SB_PANEL_W);
 
     // detail chips
@@ -4637,10 +4740,8 @@ begin
       Lbl := 'Open'
     else if (Mode = smJukebox) then
       Lbl := 'Play'
-    else if ScoringOn then
-      Lbl := 'Sing this'
     else
-      Lbl := 'Sing (no scoring)';
+      Lbl := 'Sing';
     TW := MTextW(Lbl, 22, true);
     MIconPlay(R.X + R.W / 2 - TW / 2 - 16, R.Y + 28, 18, mcOnAccent, 1);
     MText(R.X + R.W / 2 - TW / 2 + 4, R.Y + 17, Lbl, 22, true, mcOnAccent, 1);
@@ -4766,7 +4867,7 @@ begin
   HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
   HX := HX + MKeyHint(HX, 682, 'Enter', 'sing') + 22;
   HX := HX + MKeyHint(HX, 682, 'K', 'scoring') + 22;
-  HX := HX + MKeyHint(HX, 682, 'J', 'search') + 22;
+  HX := HX + MKeyHint(HX, 682, 'J', 'type to search') + 22;
   HX := HX + MKeyHint(HX, 682, 'M', 'more') + 22;
   if (VS > 0) and CatSongs.Song[Interaction].isDuet then
     HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
@@ -4800,10 +4901,13 @@ begin
       begin
         MWindowToVirtual(X, Y, VX, VY);
 
+        if MSearchActive and not MHit(VX, VY, ModernHeaderRect(1)) then
+          ModernSearchFocus(false);
+
         if MHit(VX, VY, ModernHeaderRect(0)) then
           Result := ParseInput(SDLK_ESCAPE, 0, true)
         else if MHit(VX, VY, ModernHeaderRect(1)) then
-          ParseInput(SDLK_J, 0, true)
+          ModernSearchFocus(true)
         else if MHit(VX, VY, ModernHeaderRect(2)) then
           ToggleScoring
         else if MHit(VX, VY, ModernSingRect) then

@@ -77,6 +77,7 @@ uses
   ULog,
   UMain,
   UIni,
+  UModernUI,
   UNote,
   UUnicodeUtils;
 
@@ -267,9 +268,102 @@ begin
   Text[TextLevel].Text := IDifficulty[difficulty];
 end;
 
+// ui-v2: Midnight high scores
 function TScreenTop5.Draw: boolean;
+const
+  PAD = 56;
+var
+  I, J, N, Lvl: integer;
+  X, Y, W, PW: single;
+  R: TMRect;
+  Mine: boolean;
+  Gold: TMColor;
 begin
-  Result := inherited Draw;
+  Gold := MColor($F5C542);
+  Lvl := DifficultyShow;
+  if (Lvl < 0) or (Lvl > 2) then
+    Lvl := 0;
+
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  // header
+  MText(PAD, 40, CurrentSong.Title, 30, true, mcText, 1, mtaLeft, MUI_W - 2 * PAD - 360);
+  MText(PAD, 80, CurrentSong.Artist, 18, false, mcMuted, 1, mtaLeft, MUI_W - 2 * PAD - 360);
+
+  // difficulty pills (Left/Right)
+  X := MUI_W - PAD;
+  for I := 2 downto 0 do
+  begin
+    PW := MTextW(IDifficultyTranslated[I], 16, true) + 36;
+    X := X - PW;
+    if (I = Lvl) then
+    begin
+      MFillRound(X, 38, PW, 40, 20, mcText, 1);
+      MText(X + PW / 2, 49, IDifficultyTranslated[I], 16, true, mcBg, 1, mtaCenter);
+    end
+    else
+    begin
+      MStrokeRound(X, 38, PW, 40, 20, 1, mcBorder, 1);
+      MText(X + PW / 2, 49, IDifficultyTranslated[I], 16, false, mcMuted, 1, mtaCenter);
+    end;
+    X := X - 8;
+  end;
+
+  MText(PAD, 130, 'High scores', 22, true, mcText, 1);
+
+  // the five best
+  W := MUI_W - 2 * PAD;
+  if (W > 900) then
+    W := 900;
+  N := Length(CurrentSong.Score[Lvl]);
+  if (N > 5) then
+    N := 5;
+  if (N = 0) then
+    MText(PAD, 190, 'No scores yet on this difficulty', 19, false, mcMuted, 1);
+
+  for I := 0 to N - 1 do
+  begin
+    Y := 176 + I * 82;
+    R := MRect(PAD, Y, W, 70);
+
+    // highlight scores just sung by the current singers
+    Mine := false;
+    for J := 0 to PlayersPlay - 1 do
+      if (CurrentSong.Score[Lvl, I].Name = Player[J].Name) and
+         (CurrentSong.Score[Lvl, I].Score = Player[J].ScoreTotalInt) then
+        Mine := true;
+
+    if Mine then
+    begin
+      MFillRound(R.X, R.Y, R.W, R.H, 18, mcSurface2, 1);
+      MStrokeRound(R.X, R.Y, R.W, R.H, 18, 2, mcAccent, 1);
+    end
+    else
+      MFillRound(R.X, R.Y, R.W, R.H, 18, mcSurface, 1);
+
+    // rank
+    if (I = 0) then
+      MFillCircle(R.X + 40, R.Y + 35, 20, Gold, 1)
+    else
+      MFillCircle(R.X + 40, R.Y + 35, 20, mcSurface2, 1);
+    if (I = 0) then
+      MText(R.X + 40, R.Y + 24, IntToStr(I + 1), 20, true, mcBg, 1, mtaCenter)
+    else
+      MText(R.X + 40, R.Y + 24, IntToStr(I + 1), 20, true, mcText, 1, mtaCenter);
+
+    MText(R.X + 80, R.Y + 16, CurrentSong.Score[Lvl, I].Name, 20, true, mcText, 1, mtaLeft, R.W - 300);
+    MText(R.X + 80, R.Y + 40, CurrentSong.Score[Lvl, I].Date, 14, false, mcMuted, 1, mtaLeft, R.W - 300);
+    MText(R.X + R.W - 28, R.Y + 21, IntToStr(CurrentSong.Score[Lvl, I].Score), 26, true, mcText, 1, mtaRight);
+  end;
+
+  // footer
+  X := PAD;
+  X := X + MKeyHint(X, 682, 'Left/Right', 'difficulty') + 22;
+  MKeyHint(X, 682, 'Enter', 'continue');
+
+  MEnd;
+  Result := true;
 end;
 
 end.

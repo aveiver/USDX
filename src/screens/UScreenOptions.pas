@@ -38,6 +38,7 @@ uses
   UFiles,
   UIni,
   UMenu,
+  UModernUI,
   UMusic,
   USongs,
   UThemes,
@@ -65,12 +66,23 @@ type
       procedure UpdateTextDescriptionFor(IID: integer); virtual;
       procedure OpenRecordOptions;
 
+    private
+      // ui-v2 (Midnight) grid
+      FTileRects: array of TMRect;
+      FBackRect: TMRect;
+      FRingX, FRingY, FRingW, FRingH: single;
+      FRingReady: boolean;
+      function TileCount: integer;
+      procedure MoveGrid(DX, DY: integer);
+
     public
       TextDescription:    integer;
       constructor Create; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
       procedure SetInteraction(Num: integer); override;
+      function Draw: boolean; override;
+      function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
   end;
 
 const
@@ -281,10 +293,10 @@ begin
             FadeTo(@ScreenMain);
           end;
         end;
-      SDLK_DOWN:    InteractNextRow;
-      SDLK_UP:      InteractPrevRow;
-      SDLK_RIGHT:   InteractNext;
-      SDLK_LEFT:    InteractPrev;
+      SDLK_DOWN:    MoveGrid(0, 1);
+      SDLK_UP:      MoveGrid(0, -1);
+      SDLK_RIGHT:   MoveGrid(1, 0);
+      SDLK_LEFT:    MoveGrid(-1, 0);
     end;
   end;
 end;
@@ -346,6 +358,7 @@ end;
 procedure TScreenOptions.OnShow;
 begin
   inherited;
+  FRingReady := false;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenOptions');
@@ -367,6 +380,177 @@ begin
     Exit;
 
   Text[TextDescription].Text := Theme.Options.Description[MapIIDtoDescID[IID]];
+end;
+
+{ ui-v2: Midnight options hub - a grid of tiles, Back in the header }
+
+const
+  OH_PAD  = 56;
+  OH_COLS = 4;
+  OH_SHORTCUTS: array[0..10] of string = ('G', 'H', 'S', 'I', 'L', 'T', 'R', 'A', 'N', 'W', 'J');
+
+// tiles are every interaction except the Back button (the last one)
+function TScreenOptions.TileCount: integer;
+begin
+  Result := Length(Interactions) - 1;
+  if (Result < 0) then
+    Result := 0;
+end;
+
+procedure TScreenOptions.MoveGrid(DX, DY: integer);
+var
+  N, Cur, Nxt: integer;
+begin
+  N := TileCount;
+  Cur := Interaction;
+
+  if (Cur >= N) then
+  begin
+    // on Back: down/right goes to the first tile
+    if (DY > 0) or (DX > 0) then
+      Interaction := 0;
+    Exit;
+  end;
+
+  if (DX <> 0) then
+  begin
+    Nxt := Cur + DX;
+    if (Nxt >= 0) and (Nxt < N) then
+      Interaction := Nxt;
+  end
+  else if (DY < 0) then
+  begin
+    if (Cur < OH_COLS) then
+      Interaction := N  // up from the first row: Back
+    else
+      Interaction := Cur - OH_COLS;
+  end
+  else if (DY > 0) then
+  begin
+    Nxt := Cur + OH_COLS;
+    if (Nxt < N) then
+      Interaction := Nxt
+    else if ((Cur div OH_COLS) < ((N - 1) div OH_COLS)) then
+      Interaction := N - 1; // short last row
+  end;
+end;
+
+function TScreenOptions.Draw: boolean;
+var
+  I, N: integer;
+  TileW, TileH, X, Y: single;
+  R, Ring: TMRect;
+  Lbl, Desc: UTF8String;
+begin
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  // header
+  FBackRect := MRect(OH_PAD, 34, 44, 44);
+  if (Interaction >= TileCount) then
+    MFillCircle(OH_PAD + 22, 56, 22, mcText, 1)
+  else
+    MFillCircle(OH_PAD + 22, 56, 22, mcSurface, 1);
+  MStrokeRound(OH_PAD, 34, 44, 44, 22, 1, mcBorder, 1);
+  if (Interaction >= TileCount) then
+    MIconBack(OH_PAD + 22, 56, 24, mcBg, 1)
+  else
+    MIconBack(OH_PAD + 22, 56, 24, mcText, 1);
+  MText(OH_PAD + 64, 40, Language.Translate('SING_OPTIONS'), 30, true, mcText, 1);
+
+  // description of the selected tile
+  Desc := '';
+  if (TextDescription >= 0) and (TextDescription <= High(Text)) then
+    Desc := Text[TextDescription].Text;
+  MText(OH_PAD, 108, Desc, 18, false, mcMuted, 1, mtaLeft, MUI_W - 2 * OH_PAD);
+
+  // tiles
+  N := TileCount;
+  SetLength(FTileRects, N);
+  TileW := (MUI_W - 2 * OH_PAD - (OH_COLS - 1) * 20) / OH_COLS;
+  TileH := 132;
+  for I := 0 to N - 1 do
+  begin
+    X := OH_PAD + (I mod OH_COLS) * (TileW + 20);
+    Y := 150 + (I div OH_COLS) * (TileH + 20);
+    R := MRect(X, Y, TileW, TileH);
+    FTileRects[I] := R;
+
+    if (I = Interaction) then
+      MFillRound(R.X, R.Y, R.W, R.H, 20, mcSurface2, 1)
+    else
+      MFillRound(R.X, R.Y, R.W, R.H, 20, mcSurface, 1);
+    MStrokeRound(R.X, R.Y, R.W, R.H, 20, 1, mcBorder, 1);
+
+    Lbl := '';
+    if (Interactions[I].Typ = iButton) and (Length(Button[Interactions[I].Num].Text) > 0) then
+      Lbl := Button[Interactions[I].Num].Text[0].Text;
+    MText(R.X + 24, R.Y + R.H - 52, Lbl, 26, true, mcText, 1, mtaLeft, R.W - 48);
+
+    // keyboard shortcut chip
+    if (I <= High(OH_SHORTCUTS)) then
+    begin
+      MFillRound(R.X + R.W - 46, R.Y + 16, 30, 28, 8, mcBg, 1);
+      MText(R.X + R.W - 31, R.Y + 21, OH_SHORTCUTS[I], 15, true, mcMuted, 1, mtaCenter);
+    end;
+  end;
+
+  // selection ring
+  if (Interaction < N) and (Interaction >= 0) then
+  begin
+    Ring := FTileRects[Interaction];
+    if not FRingReady then
+    begin
+      FRingX := Ring.X; FRingY := Ring.Y; FRingW := Ring.W; FRingH := Ring.H;
+      FRingReady := true;
+    end
+    else
+    begin
+      FRingX := MApproach(FRingX, Ring.X, 16);
+      FRingY := MApproach(FRingY, Ring.Y, 16);
+      FRingW := MApproach(FRingW, Ring.W, 16);
+      FRingH := MApproach(FRingH, Ring.H, 16);
+    end;
+    MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 26, 3, mcText, 1);
+  end;
+
+  // footer
+  X := OH_PAD;
+  X := X + MKeyHint(X, 682, 'Arrows', 'move') + 22;
+  X := X + MKeyHint(X, 682, 'Enter', 'open') + 22;
+  MKeyHint(X, 682, 'Esc', 'back');
+
+  MEnd;
+  Result := true;
+end;
+
+function TScreenOptions.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+begin
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  if (MouseButton = SDL_BUTTON_RIGHT) then
+    Result := ParseInput(SDLK_ESCAPE, 0, true)
+  else if (MouseButton = SDL_BUTTON_LEFT) then
+  begin
+    MWindowToVirtual(X, Y, VX, VY);
+    if MHit(VX, VY, FBackRect) then
+    begin
+      Result := ParseInput(SDLK_ESCAPE, 0, true);
+      Exit;
+    end;
+    for I := 0 to High(FTileRects) do
+      if MHit(VX, VY, FTileRects[I]) then
+      begin
+        Interaction := I;
+        Result := ParseInput(SDLK_RETURN, 0, true);
+        Exit;
+      end;
+  end;
 end;
 
 end.
