@@ -532,6 +532,21 @@ begin
   MFillCircle(L + TW * Prog, TL_Y + TL_H / 2, 4, mcAccent, 1);
 end;
 
+function PopupText(Rating: integer): UTF8String;
+begin
+  case Rating of
+    8: Result := Language.Translate('POPUP_PERFECT');
+    7: Result := Language.Translate('POPUP_AWESOME');
+    6: Result := Language.Translate('POPUP_GREAT');
+    5: Result := Language.Translate('POPUP_GOOD');
+    4: Result := Language.Translate('POPUP_NOTBAD');
+    3: Result := Language.Translate('POPUP_BAD');
+    2: Result := Language.Translate('POPUP_POOR');
+  else
+    Result := Language.Translate('POPUP_AWFUL');
+  end;
+end;
+
 // singer chip: avatar, name and score; AlignRight puts the avatar on the right
 procedure DrawPlayerChip(X, Y, W: single; PlayerIndex: integer; AlignRight, ShowScore: boolean);
 const
