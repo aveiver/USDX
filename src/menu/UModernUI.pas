@@ -106,6 +106,8 @@ procedure MCornerMask(X, Y, W, H, Radius: single; const Bg: TMColor);
 
 // textures (covers)
 procedure MDrawTex(Tex: TTexture; X, Y, W, H, A: single);
+// same, multiplied by a colour (e.g. tinting the plain "no avatar" silhouette)
+procedure MDrawTexTint(Tex: TTexture; X, Y, W, H, A: single; const C: TMColor);
 
 // text; Y is the top of the line. Size is roughly the cap-to-descender height.
 function MTextW(const S: UTF8String; Size: single; Bold: boolean): single;
@@ -126,6 +128,7 @@ function MKeyHint(X, Y: single; const Key, Caption: UTF8String): single;
 procedure MIconPlay(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconNote(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconBack(CX, CY, Size: single; const C: TMColor; A: single);
+procedure MIconForward(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconSearch(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconMic(CX, CY, Size: single; const C: TMColor; A: single);
 
@@ -182,6 +185,9 @@ begin
     MUI_W := 960;
 
   SavedDepthTest := Renderer.DepthTest;
+  // The modern UI never uses the depth buffer: clear it so leftovers from
+  // earlier draws can't hide our shapes, and keep depth testing off.
+  Renderer.ClearFrameBuffer(CLEAR_DEPTH);
   Renderer.DepthTest := false;
   Renderer.SetOrthographicProjection(0, MUI_W, MUI_H, 0, -1, 100);
 end;
@@ -393,7 +399,7 @@ begin
   Renderer.DrawTriangles(Tris);
 end;
 
-procedure MDrawTex(Tex: TTexture; X, Y, W, H, A: single);
+procedure DrawTexRGB(Tex: TTexture; X, Y, W, H, A, R, G, B: single);
 begin
   if (Tex = nil) or Tex.IsEmpty then
     Exit;
@@ -403,13 +409,23 @@ begin
   Tex.W := W;
   Tex.H := H;
   Tex.Int := 1;
-  Tex.ColR := 1;
-  Tex.ColG := 1;
-  Tex.ColB := 1;
+  Tex.ColR := R;
+  Tex.ColG := G;
+  Tex.ColB := B;
   Tex.Alpha := A;
   Tex.AlphaGradient := gdNone;
   Tex.Reflection := false;
   Renderer.DrawTexture(Tex);
+end;
+
+procedure MDrawTex(Tex: TTexture; X, Y, W, H, A: single);
+begin
+  DrawTexRGB(Tex, X, Y, W, H, A, 1, 1, 1);
+end;
+
+procedure MDrawTexTint(Tex: TTexture; X, Y, W, H, A: single; const C: TMColor);
+begin
+  DrawTexRGB(Tex, X, Y, W, H, A, C.R, C.G, C.B);
 end;
 
 { --- text --- }
@@ -492,6 +508,8 @@ begin
   SetFontColor(C.R, C.G, C.B, A);
   SetFontPos(X, Y);
   PrintText(Txt);
+  // the font code switches depth testing back on after printing
+  Renderer.DepthTest := false;
 
   SetFont(Old);
 end;
@@ -687,6 +705,15 @@ begin
   S := Size / 24;
   MLine(CX + 3 * S, CY - 6 * S, CX - 3 * S, CY, 2 * S, C, A);
   MLine(CX - 3 * S, CY, CX + 3 * S, CY + 6 * S, 2 * S, C, A);
+end;
+
+procedure MIconForward(CX, CY, Size: single; const C: TMColor; A: single);
+var
+  S: single;
+begin
+  S := Size / 24;
+  MLine(CX - 3 * S, CY - 6 * S, CX + 3 * S, CY, 2 * S, C, A);
+  MLine(CX + 3 * S, CY, CX - 3 * S, CY + 6 * S, 2 * S, C, A);
 end;
 
 procedure MIconSearch(CX, CY, Size: single; const C: TMColor; A: single);

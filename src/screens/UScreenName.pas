@@ -39,8 +39,10 @@ uses
   UFiles,
   UIni,
   UMenu,
+  UModernUI,
   UMusic,
   UNote,
+  URenderer,
   UScreenScore,
   UScreenSingController,
   UScreenTop5,
@@ -86,6 +88,22 @@ type
 
       PlayerAvatarButton: array of integer;
       PlayerAvatarButtonMD5: array of UTF8String;
+
+      // ui-v2 (Midnight) player setup
+      FRow: integer;   // 0 singers count, 1 singer cards, 2 avatar, 3 name
+      FRingX, FRingY, FRingW, FRingH: single;
+      FRingReady: boolean;
+      FCountRects: array[0..4] of TMRect;
+      FCardRects: array[0..UIni.IMaxPlayerCount-1] of TMRect;
+      FBackRect, FContinueRect, FAvatarRect, FAvatarPrev, FAvatarNext, FNameRect: TMRect;
+      function CardSize: single;
+      function AvatarTexture(P: integer): TTexture;
+      procedure SetCount(Index: integer);
+      procedure SelectPlayer(Index: integer);
+      procedure StepAvatar(Delta: integer);
+      procedure SetRow(Row: integer);
+      procedure GoBack;
+      procedure ContinueToSongs;
     public
       Goto_SingScreen: boolean; //If true then next Screen in SingScreen
       
@@ -131,113 +149,228 @@ uses
   UMain,
   UMenuButton,
   UPath,
-  URenderer,
   USkins,
   USongs,
   UTime,
   UUnicodeUtils,
   Math;
 
-function TScreenName.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+{ =====================================================================
+  ui-v2: Midnight player setup
+  Rows: 0 = number of singers, 1 = singer cards, 2 = avatar, 3 = name.
+  Colour and difficulty are no longer shown; each singer keeps the saved
+  values (colours are still assigned so they never clash).
+  ===================================================================== }
+
+const
+  PN_PAD = 56;
+
+function PlayerMColor(ColorNum: integer): TMColor;
+var
+  C: TRGB;
+begin
+  C := GetPlayerColor(ColorNum);
+  Result.R := C.R;
+  Result.G := C.G;
+  Result.B := C.B;
+end;
+
+function TScreenName.CardSize: single;
+var
+  N: integer;
+begin
+  N := UIni.IPlayersVals[CountIndex];
+  Result := (MUI_W - 2 * PN_PAD - (N - 1) * 20) / N;
+  if (Result > 200) then
+    Result := 200;
+end;
+
+procedure TScreenName.SetCount(Index: integer);
+begin
+  if (Index < 0) or (Index > High(UIni.IPlayersVals)) then
+    Exit;
+  CountIndex := Index;
+  RefreshPlayers;
+end;
+
+procedure TScreenName.SelectPlayer(Index: integer);
+begin
+  if (Index < 0) or (Index >= UIni.IPlayersVals[CountIndex]) then
+    Exit;
+  PlayerIndex := Index;
+  RefreshProfile;
+  AvatarTarget := PlayerAvatars[PlayerIndex];
+  AvatarCurrent := AvatarTarget;
+end;
+
+procedure TScreenName.StepAvatar(Delta: integer);
+var
+  N: integer;
+begin
+  N := Length(AvatarsList);
+  if (N <= 0) then
+    Exit;
+  PlayerAvatars[PlayerIndex] := (PlayerAvatars[PlayerIndex] + Delta + N) mod N;
+  SetPlayerAvatar(PlayerIndex);
+end;
+
+procedure TScreenName.SetRow(Row: integer);
+begin
+  if (Row < 0) then
+    Row := 0;
+  if (Row > 3) then
+    Row := 3;
+  FRow := Row;
+  SetTextInput(FRow = 3);
+end;
+
+procedure TScreenName.GoBack;
+begin
+  StopTextInput;
+  Ini.SaveNames;
+  AudioPlayback.PlaySound(SoundLib.Back);
+  if GoTo_SingScreen then
+    FadeTo(@ScreenSong)
+  else
+    FadeTo(@ScreenMain);
+end;
+
+procedure TScreenName.ContinueToSongs;
 var
   I: integer;
-  Btn: integer;
+  Col: TRGB;
 begin
-  Result := true;
+  StopTextInput;
+  Ini.Players := CountIndex;
+  PlayersPlay:= UIni.IPlayersVals[CountIndex];
+  SetLength(Player, PlayersPlay);
 
-  inherited ParseMouse(MouseButton, BtnDown, X, Y);
-  SetTextInput(Button[PlayerName].Selected);
-
-  // transfer mousecords to the 800x600 raster we use to draw
-  X := Round((X / (ScreenW / Screens)) * RenderW);
-  if (X > RenderW) then
-    X := X - RenderW;
-  Y := Round((Y / ScreenH) * RenderH);
-
-  if (BtnDown) then
+  for I := 1 to PlayersPlay do
   begin
-     //if RightMbESC is set, send ESC keypress
-    if RightMbESC and (MouseButton = SDL_BUTTON_RIGHT) then
-      Result:=ParseInput(SDLK_ESCAPE, 0, true);
+    // TODO: is it really necessary for this screen to duplicate all these Ini. arrays?
+    Ini.Name[I-1] := PlayerNames[I-1];
+    Ini.PlayerColor[I-1] := Num[I-1];
+    Ini.SingColor[I-1] := Num[I-1];
+    Ini.PlayerLevel[I-1] := PlayerLevel[I-1];
+    // also set (some) of this info in the much easier to use Player variable
+    Player[I-1].Name := PlayerNames[I-1];
+    Player[I-1].Level := PlayerLevel[I-1];
 
-    //scrolling avatars with mousewheel
-    if (MouseButton = SDL_BUTTON_WHEELDOWN) then
+    Ini.PlayerAvatar[I-1] := PlayerAvatarButtonMD5[PlayerAvatars[I-1]];
+
+    if (PlayerAvatars[I-1] = 0) then
     begin
-      if (Interaction = PlayerAvatarIID) then
-        ParseInput(SDLK_RIGHT, 0, true);
-    end
-    else if (MouseButton = SDL_BUTTON_WHEELUP) then
-    begin
-      if (Interaction = PlayerAvatarIID) then
-        ParseInput(SDLK_LEFT, 0, true);
+      AvatarPlayerTextures[I] := NoAvatartexture[I];
+
+      Col := GetPlayerColor(Num[I-1]);
+
+      AvatarPlayerTextures[I].ColR := Col.R;
+      AvatarPlayerTextures[I].ColG := Col.G;
+      AvatarPlayerTextures[I].ColB := Col.B;
     end
     else
     begin
-      // click avatars
-      // 1st left
-      Btn := AvatarTarget - 2;
-      if (Btn < 0) then
-        Btn := High(AvatarsList);
-
-      if InRegion(X, Y, Button[PlayerAvatarButton[Btn]].GetMouseOverArea) then
-      begin
-        Interaction := 2;
-
-        ParseInput(SDLK_LEFT, 0, true);
-        ParseInput(SDLK_LEFT, 0, true);
-      end;
-
-      // 2nd left
-      Btn := AvatarTarget - 1;
-      if (Btn < 0) then
-        Btn := High(AvatarsList);
-
-      if InRegion(X, Y, Button[PlayerAvatarButton[Btn]].GetMouseOverArea) then
-      begin
-        Interaction := 2;
-
-        ParseInput(SDLK_LEFT, 0, true);
-      end;
-
-      // 1st right
-      Btn := AvatarTarget + 1;
-      if (Btn > High(AvatarsList)) then
-        Btn := 0;
-
-      if InRegion(X, Y, Button[PlayerAvatarButton[Btn]].GetMouseOverArea) then
-      begin
-        Interaction := 2;
-
-        ParseInput(SDLK_RIGHT, 0, true);
-      end;
-
-      // 2nd right
-      Btn := AvatarTarget + 2;
-      if (Btn > High(AvatarsList)) then
-        Btn := 0;
-
-      if InRegion(X, Y, Button[PlayerAvatarButton[Btn]].GetMouseOverArea) then
-      begin
-        Interaction := 2;
-
-        ParseInput(SDLK_RIGHT, 0, true);
-        ParseInput(SDLK_RIGHT, 0, true);
-      end;
-
-      // click for change player profile
-      for I := 0 to 5 do
-      begin
-        if Statics[PlayerCurrent[I]].Visible and InRegion(X, Y, Statics[PlayerCurrent[I]].GetMouseOverArea) then
-        begin
-          PlayerIndex := I;
-
-          RefreshProfile();
-
-          isScrolling := true;
-          AvatarTarget := PlayerAvatars[PlayerIndex];
-        end;
-      end;
+      Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Int := 1;
+      AvatarPlayerTextures[I] := Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Clone();
     end;
+
+  end;
+
+  Ini.SaveNumberOfPlayers;
+  Ini.SaveNames;
+  Ini.SavePlayerColors;
+  Ini.SavePlayerAvatars;
+  Ini.SavePlayerLevels;
+
+  LoadPlayersColors;
+  Theme.ThemeScoreLoad;
+
+  // Reload ScreenSing and ScreenScore because of player colors
+  // TODO: do this better  REALLY NECESSARY?
+  ScreenScore.Free;
+  ScreenSing.Free;
+
+  ScreenScore := TScreenScore.Create;
+  ScreenSing  := TScreenSingController.Create;
+
+  AudioPlayback.PlaySound(SoundLib.Start);
+
+  if GoTo_SingScreen then
+  begin
+    // if we've been in the player screen, we need to show the warning again
+    ScreenSing.CheckPlayerConfigOnNextSong := true;
+    FadeTo(@ScreenSing);
+    GoTo_SingScreen := false;
+  end
+  else
+  begin
+    FadeTo(@ScreenSong);
+    GoTo_SingScreen := false;
+  end;
+end;
+
+function TScreenName.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+begin
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  case MouseButton of
+    SDL_BUTTON_RIGHT:
+      GoBack;
+    SDL_BUTTON_WHEELDOWN:
+      if (FRow = 2) then StepAvatar(1);
+    SDL_BUTTON_WHEELUP:
+      if (FRow = 2) then StepAvatar(-1);
+    SDL_BUTTON_LEFT:
+      begin
+        MWindowToVirtual(X, Y, VX, VY);
+
+        if MHit(VX, VY, FBackRect) then
+        begin
+          GoBack;
+          Exit;
+        end;
+        if MHit(VX, VY, FContinueRect) then
+        begin
+          ContinueToSongs;
+          Exit;
+        end;
+
+        for I := 0 to High(UIni.IPlayersVals) do
+          if MHit(VX, VY, FCountRects[I]) then
+          begin
+            SetCount(I);
+            SetRow(0);
+            Exit;
+          end;
+
+        for I := 0 to UIni.IPlayersVals[CountIndex] - 1 do
+          if MHit(VX, VY, FCardRects[I]) then
+          begin
+            SelectPlayer(I);
+            SetRow(1);
+            Exit;
+          end;
+
+        if MHit(VX, VY, FAvatarPrev) then
+        begin
+          StepAvatar(-1);
+          SetRow(2);
+        end
+        else if MHit(VX, VY, FAvatarNext) then
+        begin
+          StepAvatar(1);
+          SetRow(2);
+        end
+        else if MHit(VX, VY, FAvatarRect) then
+          SetRow(2)
+        else if MHit(VX, VY, FNameRect) then
+          SetRow(3);
+      end;
   end;
 end;
 
@@ -248,7 +381,7 @@ begin
   case PressedKey of
     // Templates for Names Mod
     SDLK_F1, SDLK_F2, SDLK_F3, SDLK_F4, SDLK_F5, SDLK_F6, SDLK_F7, SDLK_F8, SDLK_F9, SDLK_F10, SDLK_F11, SDLK_F12:
-     if (Button[PlayerName].Selected) then
+     if (FRow = 3) then
      begin
        SuppressKey := true;
      end
@@ -261,275 +394,100 @@ end;
 
 function TScreenName.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
   var
-    I: integer;
     SDL_ModState: word;
-    Col: TRGB;
+    Len: integer;
 
   procedure HandleNameTemplate(const index: integer);
   var
     isAlternate: boolean;
   begin
+    if (FRow <> 3) then
+      Exit;
     isAlternate := (SDL_ModState = KMOD_LSHIFT) or (SDL_ModState = KMOD_RSHIFT);
     isAlternate := isAlternate or (SDL_ModState = KMOD_LALT); // legacy key combination
 
     if isAlternate then
-    begin
-      Ini.NameTemplate[index] := Button[PlayerName].Text[0].Text;
-    end
+      Ini.NameTemplate[index] := PlayerNames[PlayerIndex]
     else
-    begin
-      Button[PlayerName].Text[0].Text := Ini.NameTemplate[index];
-      PlayerNames[PlayerIndex] := Button[PlayerName].Text[0].Text;
-    end;
+      PlayerNames[PlayerIndex] := Ini.NameTemplate[index];
   end;
 
 begin
   Result := true;
-  if (PressedDown) then
-  begin // Key Down
+  if not PressedDown then
+    Exit;
 
-    SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT
-    + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
+  SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT
+  + KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT  + KMOD_RALT);
 
-    if (not Button[PlayerName].Selected) then
-    begin
-      // check normal keys
-      case PressedKey of
-        SDLK_Q:
-          begin
-            Result := false;
-            Exit;
-          end;
-      end;
-    end
-    else if (Interaction = 3) and (IsPrintableChar(CharCode)) then
-    begin
-      // pass printable chars to button
-      Button[PlayerName].Text[0].Text := Button[PlayerName].Text[0].Text +
-                                          UCS4ToUTF8String(CharCode);
+  // typing a name
+  if (FRow = 3) and IsPrintableChar(CharCode) then
+  begin
+    PlayerNames[PlayerIndex] := PlayerNames[PlayerIndex] + UCS4ToUTF8String(CharCode);
+    Exit;
+  end;
 
-      PlayerNames[PlayerIndex] := Button[PlayerName].Text[0].Text;
-      Exit;
-    end;
+  if (FRow <> 3) and (PressedKey = SDLK_Q) then
+  begin
+    Result := false;
+    Exit;
+  end;
 
-    // check special keys
-    case PressedKey of
+  case PressedKey of
+    // Templates for Names Mod
+    SDLK_F1: HandleNameTemplate(0);
+    SDLK_F2: HandleNameTemplate(1);
+    SDLK_F3: HandleNameTemplate(2);
+    SDLK_F4: HandleNameTemplate(3);
+    SDLK_F5: HandleNameTemplate(4);
+    SDLK_F6: HandleNameTemplate(5);
+    SDLK_F7: HandleNameTemplate(6);
+    SDLK_F8: HandleNameTemplate(7);
+    SDLK_F9: HandleNameTemplate(8);
+    SDLK_F10: HandleNameTemplate(9);
+    SDLK_F11: HandleNameTemplate(10);
+    SDLK_F12: HandleNameTemplate(11);
 
-      // Templates for Names Mod
-      SDLK_F1: HandleNameTemplate(0);
-      SDLK_F2: HandleNameTemplate(1);
-      SDLK_F3: HandleNameTemplate(2);
-      SDLK_F4: HandleNameTemplate(3);
-      SDLK_F5: HandleNameTemplate(4);
-      SDLK_F6: HandleNameTemplate(5);
-      SDLK_F7: HandleNameTemplate(6);
-      SDLK_F8: HandleNameTemplate(7);
-      SDLK_F9: HandleNameTemplate(8);
-      SDLK_F10: HandleNameTemplate(9);
-      SDLK_F11: HandleNameTemplate(10);
-      SDLK_F12: HandleNameTemplate(11);
-
-      SDLK_BACKSPACE:
-        begin
-          if (Interaction = 3) then
-          begin
-            Button[PlayerName].Text[0].DeleteLastLetter();
-            PlayerNames[PlayerIndex] := Button[PlayerName].Text[0].Text;
-          end
-          else
-            ParseInput(SDLK_ESCAPE, CharCode, PressedDown);
-        end;
-
-      SDLK_TAB:
-        begin
-          ScreenPopupHelp.ShowPopup();
-        end;
-
-      SDLK_ESCAPE :
-        begin
-          StopTextInput;
-          Ini.SaveNames;
-          AudioPlayback.PlaySound(SoundLib.Back);
-          if GoTo_SingScreen then
-            FadeTo(@ScreenSong)
-          else
-            FadeTo(@ScreenMain);
-        end;
-
-      SDLK_RETURN:
-        begin
-          StopTextInput;
-          Ini.Players := CountIndex;
-          PlayersPlay:= UIni.IPlayersVals[CountIndex];
-          SetLength(Player, PlayersPlay);
-
-          for I := 1 to PlayersPlay do
-          begin
-            // TODO: is it really necessary for this screen to duplicate all these Ini. arrays?
-            Ini.Name[I-1] := PlayerNames[I-1];
-            Ini.PlayerColor[I-1] := Num[I-1];
-            Ini.SingColor[I-1] := Num[I-1];
-            Ini.PlayerLevel[I-1] := PlayerLevel[I-1];
-            // also set (some) of this info in the much easier to use Player variable
-            Player[I-1].Name := PlayerNames[I-1];
-            Player[I-1].Level := PlayerLevel[I-1];
-
-            Ini.PlayerAvatar[I-1] := PlayerAvatarButtonMD5[PlayerAvatars[I-1]];
-
-            if (PlayerAvatars[I-1] = 0) then
-            begin
-              AvatarPlayerTextures[I] := NoAvatartexture[I];
-
-              Col := GetPlayerColor(Num[I-1]);
-
-              AvatarPlayerTextures[I].ColR := Col.R;
-              AvatarPlayerTextures[I].ColG := Col.G;
-              AvatarPlayerTextures[I].ColB := Col.B;
-            end
-            else
-            begin
-              Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Int := 1;
-              AvatarPlayerTextures[I] := Button[PlayerAvatarButton[PlayerAvatars[I-1]]].Texture.Clone();
-            end;
-
-          end;
-
-          Ini.SaveNumberOfPlayers;
-          Ini.SaveNames;
-          Ini.SavePlayerColors;
-          Ini.SavePlayerAvatars;
-          Ini.SavePlayerLevels;
-
-          LoadPlayersColors;
-          Theme.ThemeScoreLoad;
-
-          // Reload ScreenSing and ScreenScore because of player colors
-          // TODO: do this better  REALLY NECESSARY?
-          ScreenScore.Free;
-          ScreenSing.Free;
-
-          ScreenScore := TScreenScore.Create;
-          ScreenSing  := TScreenSingController.Create;
-          //
-
-          AudioPlayback.PlaySound(SoundLib.Start);
-
-          if GoTo_SingScreen then
-          begin
-            // if we've been in the player screen, we need to show the warning again
-            ScreenSing.CheckPlayerConfigOnNextSong := true;
-            FadeTo(@ScreenSing);
-            GoTo_SingScreen := false;
-          end
-          else
-          begin
-            FadeTo(@ScreenSong);
-            GoTo_SingScreen := false;
-          end;
-        end;
-
-      // Up and Down could be done at the same time,
-      // but I don't want to declare variables inside
-      // functions like this one, called so many times
-      SDLK_DOWN:
+    SDLK_BACKSPACE:
       begin
-        InteractNext;
-        SetTextInput(Button[PlayerName].Selected);
+        if (FRow = 3) then
+        begin
+          Len := LengthUTF8(PlayerNames[PlayerIndex]);
+          if (Len > 0) then
+            PlayerNames[PlayerIndex] := UTF8Copy(PlayerNames[PlayerIndex], 1, Len - 1);
+        end
+        else
+          GoBack;
       end;
 
-      SDLK_UP:
-      begin
-        InteractPrev;
-        SetTextInput(Button[PlayerName].Selected);
+    SDLK_TAB:
+      ScreenPopupHelp.ShowPopup();
+
+    SDLK_ESCAPE:
+      GoBack;
+
+    SDLK_RETURN:
+      ContinueToSongs;
+
+    SDLK_DOWN:
+      SetRow(FRow + 1);
+
+    SDLK_UP:
+      SetRow(FRow - 1);
+
+    SDLK_RIGHT:
+      case FRow of
+        0: SetCount(CountIndex + 1);
+        1: SelectPlayer(PlayerIndex + 1);
+        2: StepAvatar(1);
       end;
 
-      SDLK_RIGHT:
-        begin
-          AudioPlayback.PlaySound(SoundLib.Change);
-
-          if (Interaction in [0, 4, 5]) then
-            InteractInc;
-
-          if (Interaction = 0) then
-            RefreshPlayers();
-
-          if (Interaction = 1) then
-          begin //TODO: adapt this to new playersize
-              if (PlayerIndex < UIni.IPlayersVals[CountIndex]-1) then
-            begin
-              PlayerIndex := PlayerIndex + 1;
-
-              RefreshProfile();
-
-              isScrolling := true;
-              AvatarTarget := PlayerAvatars[PlayerIndex];
-            end;
-          end;
-
-          if (Interaction = 2) then
-          begin
-            SelectNext;
-            SetAvatarScroll;
-            PlayerAvatars[PlayerIndex] := AvatarTarget;
-            SetPlayerAvatar(PlayerIndex);
-          end;
-
-          if (Interaction = 4) then
-          begin
-            RefreshColor();
-            SelectsS[PlayerColor].SetSelect(true);
-          end;
-
-          if (Interaction = 5) then
-          begin
-            PlayerLevel[PlayerIndex] := LevelIndex;
-          end;
-
-        end;
-      SDLK_LEFT:
-        begin
-          AudioPlayback.PlaySound(SoundLib.Change);
-
-          if (Interaction in [0, 4, 5]) then
-            InteractDec;
-
-          if (Interaction = 0) then
-            RefreshPlayers();
-
-          if (Interaction = 1) then
-          begin
-            if (PlayerIndex > 0) then
-            begin
-              PlayerIndex := PlayerIndex - 1;
-
-              RefreshProfile();
-
-              isScrolling := true;
-              AvatarTarget := PlayerAvatars[PlayerIndex];
-            end;
-          end;
-
-          if (Interaction = 2) then
-          begin
-            SelectPrev;
-            SetAvatarScroll;
-            PlayerAvatars[PlayerIndex] := AvatarTarget;
-            SetPlayerAvatar(PlayerIndex);
-          end;
-
-          if (Interaction = 4) then
-          begin
-            RefreshColor();
-            SelectsS[PlayerColor].SetSelect(true);
-          end;
-
-          if (Interaction = 5) then
-          begin
-            PlayerLevel[PlayerIndex] := LevelIndex;
-          end;
-        end;
-
-    end;
+    SDLK_LEFT:
+      case FRow of
+        0: SetCount(CountIndex - 1);
+        1: SelectPlayer(PlayerIndex - 1);
+        2: StepAvatar(-1);
+      end;
   end;
 end;
 
@@ -919,6 +877,8 @@ begin
   isScrolling := false;
 
   Interaction := 0;
+  FRow := 0;
+  FRingReady := false;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenName');
@@ -1067,63 +1027,183 @@ begin
 
 end;
 
+function TScreenName.AvatarTexture(P: integer): TTexture;
+begin
+  if (PlayerAvatars[P] <= 0) or (PlayerAvatars[P] > High(PlayerAvatarButton)) then
+    Result := NoAvatarTexture[P + 1]
+  else
+    Result := Button[PlayerAvatarButton[PlayerAvatars[P]]].Texture;
+end;
+
+// ui-v2: Midnight player setup
 function TScreenName.Draw: boolean;
 var
-  dx: real;
-  dt: real;
-  I: integer;
+  I, N: integer;
+  X, Y, W, CardW, CardH, AvS, EdY, TW: single;
+  R, Ring: TMRect;
+  Sel: boolean;
+  Nm, Lbl: UTF8String;
+  PC: TMColor;
 begin
-  //inherited Draw;
-  //heres a little Hack, that causes the Statics
-  //are Drawn after the Buttons because of some Blending Problems.
-  //This should cause no Problems because all Buttons on this screen
-  //Has Z Position.
-  DrawBG;
-
   if Ini.ReloadNames then
-  begin
     OnShow;
-  end;
 
-  if isScrolling then
+  N := UIni.IPlayersVals[CountIndex];
+
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+
+  { header }
+  FBackRect := MRect(PN_PAD, 34, 44, 44);
+  MFillCircle(PN_PAD + 22, 56, 22, mcSurface, 1);
+  MStrokeRound(PN_PAD, 34, 44, 44, 22, 1, mcBorder, 1);
+  MIconBack(PN_PAD + 22, 56, 24, mcText, 1);
+  MText(PN_PAD + 64, 40, 'Who''s singing?', 30, true, mcText, 1);
+
+  { number of singers }
+  MText(PN_PAD, 108, 'Singers', 16, false, mcMuted, 1);
+  X := PN_PAD;
+  for I := 0 to High(UIni.IPlayersVals) do
   begin
-    dx := AvatarTarget - AvatarCurrent;
-    dt := TimeSkip * 7;
-
-    if dt > 1 then
-      dt := 1;
-
-    AvatarCurrent := AvatarCurrent + dx*dt;
-
-    if SameValue(AvatarCurrent, AvatarTarget, 0.002) and (Length(AvatarsList) > 0) then
+    R := MRect(X, 134, 64, 52);
+    FCountRects[I] := R;
+    if (I = CountIndex) then
     begin
-      isScrolling := false;
-      AvatarCurrent := AvatarTarget;
+      MFillRound(R.X, R.Y, R.W, R.H, 16, mcAccent, 1);
+      MText(R.X + R.W / 2, R.Y + 15, UIni.IPlayers[I], 22, true, mcOnAccent, 1, mtaCenter);
+    end
+    else
+    begin
+      MFillRound(R.X, R.Y, R.W, R.H, 16, mcSurface, 1);
+      MStrokeRound(R.X, R.Y, R.W, R.H, 16, 1, mcBorder, 1);
+      MText(R.X + R.W / 2, R.Y + 15, UIni.IPlayers[I], 22, true, mcMuted, 1, mtaCenter);
     end;
+    X := X + 64 + 10;
   end;
 
-  SetAvatarScroll;
+  { singer cards }
+  CardW := CardSize;
+  AvS := CardW - 32;
+  CardH := AvS + 76;
+  Y := 214;
+  for I := 0 to UIni.IMaxPlayerCount - 1 do
+    FCardRects[I] := MRect(0, 0, 0, 0);
+  for I := 0 to N - 1 do
+  begin
+    Sel := (I = PlayerIndex);
+    R := MRect(PN_PAD + I * (CardW + 20), Y, CardW, CardH);
+    FCardRects[I] := R;
 
-  // set current name = name in list
-  Text[PlayerCurrentText[PlayerIndex]].Text := Button[PlayerName].Text[0].Text;
+    if Sel then
+      MFillRound(R.X, R.Y, R.W, R.H, 20, mcSurface2, 1)
+    else
+      MFillRound(R.X, R.Y, R.W, R.H, 20, mcSurface, 1);
+    MStrokeRound(R.X, R.Y, R.W, R.H, 20, 1, mcBorder, 1);
 
-  //Instead of Draw FG Procedure:
-  //We draw Buttons for our own
-  for I := 0 to High(Button) do
-    Button[I].Draw;
+    PC := PlayerMColor(Num[I]);
+    if (PlayerAvatars[I] <= 0) then
+    begin
+      MFillRect(R.X + 16, R.Y + 16, AvS, AvS, mcBg, 1);
+      MDrawTexTint(AvatarTexture(I), R.X + 16, R.Y + 16, AvS, AvS, 1, PC);
+    end
+    else
+      MDrawTex(AvatarTexture(I), R.X + 16, R.Y + 16, AvS, AvS, 1);
+    if Sel then
+      MCornerMask(R.X + 16, R.Y + 16, AvS, AvS, 14, mcSurface2)
+    else
+      MCornerMask(R.X + 16, R.Y + 16, AvS, AvS, 14, mcSurface);
 
-  // SelectsS
-  for I := 0 to High(SelectsS) do
-    SelectsS[I].Draw;
+    // name with the singer's colour dot
+    Nm := PlayerNames[I];
+    MFillCircle(R.X + 22, R.Y + AvS + 44, 5, PC, 1);
+    if (Nm = '') then
+      MText(R.X + 34, R.Y + AvS + 33, 'Player ' + IntToStr(I + 1), 18, true, mcMuted, 1, mtaLeft, R.W - 50)
+    else
+      MText(R.X + 34, R.Y + AvS + 33, Nm, 18, true, mcText, 1, mtaLeft, R.W - 50);
+  end;
 
-  // Statics
-  for I := 0 to High(Statics) do
-    Statics[I].Draw;
+  { editor for the selected singer }
+  EdY := Y + CardH + 32;
 
-  // and texts
-  for I := 0 to High(Text) do
-    Text[I].Draw;
+  // avatar picker
+  FAvatarRect := MRect(PN_PAD, EdY, 330, 60);
+  R := FAvatarRect;
+  MFillRound(R.X, R.Y, R.W, R.H, 30, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, 30, 1, mcBorder, 1);
+  FAvatarPrev := MRect(R.X + 8, R.Y + 8, 44, 44);
+  FAvatarNext := MRect(R.X + R.W - 52, R.Y + 8, 44, 44);
+  MFillCircle(FAvatarPrev.X + 22, FAvatarPrev.Y + 22, 22, mcSurface2, 1);
+  MFillCircle(FAvatarNext.X + 22, FAvatarNext.Y + 22, 22, mcSurface2, 1);
+  MIconBack(FAvatarPrev.X + 22, FAvatarPrev.Y + 22, 22, mcText, 1);
+  // forward arrow: back icon mirrored by drawing it with lines
+  MIconForward(FAvatarNext.X + 22, FAvatarNext.Y + 22, 22, mcText, 1);
+  if (PlayerAvatars[PlayerIndex] <= 0) then
+    Lbl := 'No avatar'
+  else
+    Lbl := 'Avatar ' + IntToStr(PlayerAvatars[PlayerIndex]) + ' of ' + IntToStr(High(AvatarsList));
+  MText(R.X + R.W / 2, R.Y + 20, Lbl, 18, false, mcText, 1, mtaCenter, R.W - 120);
 
+  // name field
+  FNameRect := MRect(PN_PAD + 330 + 20, EdY, 400, 60);
+  R := FNameRect;
+  MFillRound(R.X, R.Y, R.W, R.H, 30, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, 30, 1, mcBorder, 1);
+  MText(R.X + 24, R.Y + 21, 'Name', 15, false, mcMuted, 1);
+  Nm := PlayerNames[PlayerIndex];
+  MText(R.X + 82, R.Y + 18, Nm, 20, true, mcText, 1, mtaLeft, R.W - 110);
+  if (FRow = 3) and ((SDL_GetTicks div 500) mod 2 = 0) then
+  begin
+    TW := MTextW(Nm, 20, true);
+    if (TW > R.W - 110) then
+      TW := R.W - 110;
+    MFillRect(R.X + 84 + TW, R.Y + 16, 2, 28, mcAccent, 1);
+  end;
+
+  // continue button
+  if GoTo_SingScreen then
+    Lbl := 'Start singing'
+  else
+    Lbl := 'Choose songs';
+  W := MTextW(Lbl, 20, true) + 80;
+  FContinueRect := MRect(MUI_W - PN_PAD - W, EdY, W, 60);
+  R := FContinueRect;
+  MFillRound(R.X, R.Y, R.W, R.H, 30, mcAccent, 1);
+  MText(R.X + 30, R.Y + 19, Lbl, 20, true, mcOnAccent, 1);
+  MIconForward(R.X + R.W - 32, R.Y + 30, 22, mcOnAccent, 1);
+
+  { selection ring glides between rows }
+  case FRow of
+    0: Ring := FCountRects[CountIndex];
+    1: Ring := FCardRects[PlayerIndex];
+    2: Ring := FAvatarRect;
+  else
+    Ring := FNameRect;
+  end;
+  if not FRingReady then
+  begin
+    FRingX := Ring.X; FRingY := Ring.Y; FRingW := Ring.W; FRingH := Ring.H;
+    FRingReady := true;
+  end
+  else
+  begin
+    FRingX := MApproach(FRingX, Ring.X, 16);
+    FRingY := MApproach(FRingY, Ring.Y, 16);
+    FRingW := MApproach(FRingW, Ring.W, 16);
+    FRingH := MApproach(FRingH, Ring.H, 16);
+  end;
+  if (FRow = 1) then
+    MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, 26, 3, mcText, 1)
+  else
+    MStrokeRound(FRingX - 6, FRingY - 6, FRingW + 12, FRingH + 12, (FRingH + 12) / 2, 3, mcText, 1);
+
+  { footer }
+  X := PN_PAD;
+  X := X + MKeyHint(X, 682, 'Up/Down', 'move') + 22;
+  X := X + MKeyHint(X, 682, 'Left/Right', 'change') + 22;
+  X := X + MKeyHint(X, 682, 'Enter', 'continue') + 22;
+  MKeyHint(X, 682, 'Esc', 'back');
+
+  MEnd;
   Result := true;
 end;
 
