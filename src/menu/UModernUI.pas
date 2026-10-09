@@ -55,6 +55,8 @@ type
     X, Y, W, H: single;
   end;
 
+  TMLines = array of UTF8String;
+
 const
   MUI_H = 720.0;
 
@@ -109,6 +111,13 @@ procedure MDrawTex(Tex: TTexture; X, Y, W, H, A: single);
 function MTextW(const S: UTF8String; Size: single; Bold: boolean): single;
 procedure MText(X, Y: single; const S: UTF8String; Size: single; Bold: boolean;
   const C: TMColor; A: single; Align: integer = mtaLeft; MaxW: single = 0);
+
+// word-wraps S to lines no wider than MaxW (also splits on line breaks and '\n')
+function MWrap(const S: UTF8String; Size: single; Bold: boolean; MaxW: single): TMLines;
+
+// centred dialog card with a dimmed backdrop; Rects receives the button areas
+procedure MDialog(const Title, Msg: UTF8String; const Captions: array of UTF8String;
+  Selected: integer; var Rects: array of TMRect);
 
 // key hint like "[Enter] select"; returns the width used
 function MKeyHint(X, Y: single; const Key, Caption: UTF8String): single;
@@ -485,6 +494,132 @@ begin
   PrintText(Txt);
 
   SetFont(Old);
+end;
+
+function MWrap(const S: UTF8String; Size: single; Bold: boolean; MaxW: single): TMLines;
+var
+  Acc: TMLines;
+  Txt, Para, Wd, Line: UTF8String;
+  P, Q: integer;
+
+  procedure Push(const L: UTF8String);
+  begin
+    SetLength(Acc, Length(Acc) + 1);
+    Acc[High(Acc)] := L;
+  end;
+
+begin
+  SetLength(Acc, 0);
+  Txt := StringReplace(S, '\n', #10, [rfReplaceAll]);
+  Txt := StringReplace(Txt, #13, '', [rfReplaceAll]);
+
+  repeat
+    // next paragraph
+    P := Pos(#10, Txt);
+    if (P > 0) then
+    begin
+      Para := Copy(Txt, 1, P - 1);
+      Delete(Txt, 1, P);
+    end
+    else
+      Para := Txt;
+
+    Line := '';
+    Para := Trim(Para);
+    while (Para <> '') do
+    begin
+      Q := Pos(' ', Para);
+      if (Q > 0) then
+      begin
+        Wd := Copy(Para, 1, Q - 1);
+        Delete(Para, 1, Q);
+        Para := TrimLeft(Para);
+      end
+      else
+      begin
+        Wd := Para;
+        Para := '';
+      end;
+
+      if (Line = '') then
+        Line := Wd
+      else if (MTextW(Line + ' ' + Wd, Size, Bold) <= MaxW) then
+        Line := Line + ' ' + Wd
+      else
+      begin
+        Push(Line);
+        Line := Wd;
+      end;
+    end;
+    Push(Line);
+  until (P = 0);
+
+  Result := Acc;
+end;
+
+procedure MDialog(const Title, Msg: UTF8String; const Captions: array of UTF8String;
+  Selected: integer; var Rects: array of TMRect);
+const
+  CW = 560;
+  CP = 36;
+  BTN_H = 52;
+var
+  Lines: TMLines;
+  H, X, Y, CY, BW: single;
+  I, N: integer;
+  R: TMRect;
+begin
+  MBegin;
+
+  // dim whatever is behind
+  MFillRect(0, 0, MUI_W, MUI_H, MColor($000000), 0.6);
+
+  Lines := MWrap(Msg, 19, false, CW - 2 * CP);
+  H := CP + Length(Lines) * 28 + 28 + BTN_H + CP;
+  if (Title <> '') then
+    H := H + 46;
+
+  X := (MUI_W - CW) / 2;
+  Y := (MUI_H - H) / 2;
+  MFillRound(X, Y, CW, H, 24, mcSurface, 1);
+  MStrokeRound(X, Y, CW, H, 24, 1, mcBorder, 1);
+
+  CY := Y + CP;
+  if (Title <> '') then
+  begin
+    MText(X + CP, CY, Title, 26, true, mcText, 1, mtaLeft, CW - 2 * CP);
+    CY := CY + 46;
+  end;
+  for I := 0 to High(Lines) do
+  begin
+    MText(X + CP, CY, Lines[I], 19, false, mcMuted, 1);
+    CY := CY + 28;
+  end;
+
+  N := Length(Captions);
+  if (N > 0) then
+  begin
+    BW := (CW - 2 * CP - (N - 1) * 12) / N;
+    for I := 0 to N - 1 do
+    begin
+      R := MRect(X + CP + I * (BW + 12), Y + H - CP - BTN_H, BW, BTN_H);
+      if (I <= High(Rects)) then
+        Rects[I] := R;
+      if (I = Selected) then
+      begin
+        MFillRound(R.X, R.Y, R.W, R.H, 14, mcAccent, 1);
+        MText(R.X + R.W / 2, R.Y + 16, Captions[I], 19, true, mcOnAccent, 1, mtaCenter, R.W - 20);
+      end
+      else
+      begin
+        MFillRound(R.X, R.Y, R.W, R.H, 14, mcSurface2, 1);
+        MStrokeRound(R.X, R.Y, R.W, R.H, 14, 1, mcBorder, 1);
+        MText(R.X + R.W / 2, R.Y + 16, Captions[I], 19, true, mcText, 1, mtaCenter, R.W - 20);
+      end;
+    end;
+  end;
+
+  MEnd;
 end;
 
 function MKeyHint(X, Y: single; const Key, Caption: UTF8String): single;

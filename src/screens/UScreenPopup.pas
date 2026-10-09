@@ -41,6 +41,7 @@ uses
   ULog,
   UMenu,
   UMenuSelectSlide,
+  UModernUI,
   UMusic,
   md5,
   URenderer,
@@ -63,6 +64,7 @@ type
     private
       fHandler: TPopupCheckHandler;
       fHandlerData: Pointer;
+      FBtnRects: array[0..1] of TMRect; // ui-v2 button areas (virtual canvas)
 
     public
       Visible: boolean; // whether the menu should be drawn
@@ -73,6 +75,7 @@ type
       procedure ShowPopup(const Msg: UTF8String; Handler: TPopupCheckHandler;
           HandlerData: Pointer; DefaultValue: boolean = false);
       function Draw: boolean; override;
+      function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
   end;
 
 type
@@ -139,6 +142,8 @@ type
     private
       CurMenu: byte; //Num of the cur. Shown Menu
     }
+    private
+      FBtnRects: array[0..0] of TMRect; // ui-v2 OK button area (virtual canvas)
     public
       Visible: boolean; //Whether the Menu should be Drawn
 
@@ -148,6 +153,7 @@ type
       procedure OnHide; override;
       procedure ShowPopup(const Msg: UTF8String);
       function Draw: boolean; override;
+      function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
   end;
 
   TScreenPopupError = class(TScreenPopup)
@@ -368,10 +374,37 @@ begin
   Interaction := 0;
 end;
 
+// ui-v2: Midnight dialog instead of the theme's popup
 function TScreenPopupCheck.Draw: boolean;
 begin
   Renderer.ClearFrameBuffer(CLEAR_DEPTH);
-  Result := inherited Draw;
+  MDialog('', Text[0].Text, [Button[0].Text[0].Text, Button[1].Text[0].Text],
+    Interaction, FBtnRects);
+  Result := true;
+end;
+
+function TScreenPopupCheck.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+  I: integer;
+begin
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  if (MouseButton = SDL_BUTTON_RIGHT) then
+    Result := ParseInput(SDLK_ESCAPE, 0, true)
+  else if (MouseButton = SDL_BUTTON_LEFT) then
+  begin
+    MWindowToVirtual(X, Y, VX, VY);
+    for I := 0 to 1 do
+      if MHit(VX, VY, FBtnRects[I]) then
+      begin
+        Interaction := I;
+        Result := ParseInput(SDLK_RETURN, 0, true);
+        Break;
+      end;
+  end;
 end;
 
 procedure TScreenPopupCheck.OnShow;
@@ -1505,10 +1538,36 @@ begin
   Interaction := 0;
 end;
 
+// ui-v2: Midnight dialog instead of the theme's popup
 function TScreenPopup.Draw: boolean;
+var
+  Title: UTF8String;
 begin
   Renderer.ClearFrameBuffer(CLEAR_DEPTH);
-  Result := inherited Draw;
+  if (Length(Text) > 1) then
+    Title := Text[1].Text
+  else
+    Title := '';
+  MDialog(Title, Text[0].Text, ['OK'], 0, FBtnRects);
+  Result := true;
+end;
+
+function TScreenPopup.ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY: single;
+begin
+  Result := true;
+  if not BtnDown then
+    Exit;
+
+  if (MouseButton = SDL_BUTTON_RIGHT) then
+    Result := ParseInput(SDLK_ESCAPE, 0, true)
+  else if (MouseButton = SDL_BUTTON_LEFT) then
+  begin
+    MWindowToVirtual(X, Y, VX, VY);
+    if MHit(VX, VY, FBtnRects[0]) then
+      Result := ParseInput(SDLK_RETURN, 0, true);
+  end;
 end;
 
 procedure TScreenPopup.OnShow;
