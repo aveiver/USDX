@@ -962,18 +962,9 @@ begin
     ModernSingBackdrop;
     ModernSingLanes;
 
-    // lyrics: the classic lyric engine, placed and coloured for Midnight
-    if (ScreenSing.Settings.LyricsVisible) then
-    begin
-      ScreenSing.Lyrics.Draw(LyricsState.MidBeat);
-      SingDrawLyricHelper(0, 20, 380);
-    end;
-
-    if (TotalTime > 0) then
-      ModernSingHud(Max(CurLyricsTime, CurrentSong.Start) / TotalTime,
-        Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]))
-    else
-      ModernSingHud(0, Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]));
+    ModernSingLyrics(LyricsState.MidBeat);
+    ModernSingHud(LyricsState.GetCurrentTime(), TotalTime,
+      Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]));
   end
   else
   begin

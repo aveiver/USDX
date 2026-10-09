@@ -60,8 +60,13 @@ procedure ModernSingBackdrop;
 // one tinted-glass note lane per singer
 procedure ModernSingLanes;
 
-// progress line, singer chips, song chip and line-bonus pills
-procedure ModernSingHud(Progress: real; const TimeText: UTF8String);
+// lyrics in Helvetica: current line big (sung part lime), next line grey,
+// plus a shrinking lime "get ready" bar before a line starts
+procedure ModernSingLyrics(Beat: real);
+
+// song timeline (lyric sections + progress), singer chips, song chip and
+// line-bonus pills
+procedure ModernSingHud(CurTime, TotalTime: real; const TimeText: UTF8String);
 
 implementation
 
@@ -341,7 +346,190 @@ begin
   MEnd;
 end;
 
+{ --- lyrics --- }
+
+procedure DrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real; Active: boolean);
+var
+  I, N: integer;
+  Total, X, S, Fr: single;
+  SoFar: UTF8String;
+  Pos, Wid: array of single;
+  Shadow: TMColor;
+begin
+  if (Line = nil) then
+    Exit;
+  N := Length(Line.Words);
+  if (N = 0) then
+    Exit;
+
+  // shrink long lines to fit the screen
+  S := Size;
+  Total := MTextW(Line.Text, S, true);
+  if (Total > MUI_W - 120) and (Total > 0) then
+  begin
+    S := S * (MUI_W - 120) / Total;
+    Total := MTextW(Line.Text, S, true);
+  end;
+  X := CenterX - Total / 2;
+
+  // word positions (same method as the classic lyric engine)
+  SetLength(Pos, N);
+  SetLength(Wid, N);
+  SoFar := '';
+  for I := 0 to N - 1 do
+  begin
+    Wid[I] := MTextW(Line.Words[I].Text, S, true);
+    SoFar := SoFar + Line.Words[I].Text;
+    Pos[I] := X + MTextW(SoFar, S, true) - Wid[I];
+  end;
+
+  // soft shadow for very bright video frames
+  Shadow := MColor($000000);
+  for I := 0 to N - 1 do
+    MText(Pos[I] + 2, Y + 2, Line.Words[I].Text, S, true, Shadow, 0.55);
+
+  for I := 0 to N - 1 do
+  begin
+    if not Active then
+      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcMuted, 1)
+    else if (Beat >= Line.Words[I].Start + Line.Words[I].Length) then
+      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcAccent, 1)
+    else if (Beat <= Line.Words[I].Start) or (Line.Words[I].Length <= 0) then
+      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcText, 1)
+    else
+    begin
+      // the word being sung fills in lime from left to right
+      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcText, 1);
+      Fr := (Beat - Line.Words[I].Start) / Line.Words[I].Length;
+      MClipBegin(MRect(Pos[I], Y - S * 0.5, Wid[I] * Fr, S * 2));
+      MText(Pos[I], Y, Line.Words[I].Text, S, true, mcAccent, 1);
+      MClipEnd;
+    end;
+  end;
+end;
+
+procedure ModernSingLyrics(Beat: real);
+const
+  MOVE_LIMIT = 40; // beats, as in the classic helper
+var
+  CurSize, CurY, NextSize, NextY, Fr, BW: single;
+  CurLine: PLine;
+  FirstNoteBeat, FirstNoteDelta: integer;
+  BarDelta: real;
+begin
+  if not ScreenSing.Settings.LyricsVisible then
+    Exit;
+
+  if IsKaraoke then
+  begin
+    CurSize := 54;
+    CurY := 518;
+    NextSize := 30;
+    NextY := 596;
+  end
+  else
+  begin
+    CurSize := 40;
+    CurY := 566;
+    NextSize := 24;
+    NextY := 626;
+  end;
+
+  MBegin;
+
+  // "get ready": a lime bar that shrinks away until the line starts
+  if (Length(CurrentSong.Tracks) > 0) and
+     (CurrentSong.Tracks[0].CurrentLine >= 0) and
+     (CurrentSong.Tracks[0].CurrentLine <= High(CurrentSong.Tracks[0].Lines)) then
+  begin
+    CurLine := @CurrentSong.Tracks[0].Lines[CurrentSong.Tracks[0].CurrentLine];
+    if (Length(CurLine^.Notes) > 0) then
+    begin
+      FirstNoteBeat := CurLine^.Notes[0].StartBeat;
+      FirstNoteDelta := FirstNoteBeat - CurLine^.StartBeat;
+      BarDelta := FirstNoteBeat - LyricsState.MidBeat;
+      if (FirstNoteDelta > 8) and (BarDelta > 0) then
+      begin
+        if (BarDelta > MOVE_LIMIT) then
+          BarDelta := MOVE_LIMIT;
+        if (FirstNoteDelta > MOVE_LIMIT) then
+          FirstNoteDelta := MOVE_LIMIT;
+        Fr := BarDelta / FirstNoteDelta;
+        BW := 220 * Fr;
+        if (BW > 6) then
+          MFillRound(MUI_W / 2 - BW / 2, CurY - 22, BW, 6, 3, mcAccent, 0.9);
+      end;
+    end;
+  end;
+
+  DrawLyricLine(ScreenSing.Lyrics.GetUpperLine(), MUI_W / 2, CurY, CurSize, Beat, true);
+  DrawLyricLine(ScreenSing.Lyrics.GetLowerLine(), MUI_W / 2, NextY, NextSize, Beat, false);
+
+  MEnd;
+end;
+
 { --- HUD --- }
+
+// thin timeline along the top: lyric sections, filled lime as the song plays
+procedure DrawTimeline(CurTime, TotalTime: real);
+const
+  BAR_H = 6;
+var
+  SongStart, SongEnd, SongDur, Gap, Prog, X, W: real;
+  LineIndex: integer;
+  Ln: PLine;
+  pass: integer;
+  C: TMColor;
+begin
+  if (CurrentSong.BPM <= 0) or (TotalTime <= 0) then
+    Exit;
+
+  SongStart := CurrentSong.BPM * CurrentSong.Start / 60;
+  SongEnd := CurrentSong.BPM * TotalTime / 60;
+  SongDur := SongEnd - SongStart;
+  if (SongDur <= 0) then
+    Exit;
+  Gap := CurrentSong.BPM * CurrentSong.GAP / 1000 / 60;
+  Prog := (CurrentSong.BPM * CurTime / 60 - SongStart) / SongDur;
+  if (Prog < 0) then Prog := 0;
+  if (Prog > 1) then Prog := 1;
+
+  MFillRect(0, 0, MUI_W, BAR_H, mcBg, 0.6);
+
+  // pass 0: all sections in white; pass 1: the part already played in lime
+  for pass := 0 to 1 do
+  begin
+    if (pass = 1) then
+    begin
+      MClipBegin(MRect(0, 0, MUI_W * Prog, BAR_H));
+      MFillRect(0, 0, MUI_W * Prog, BAR_H, mcAccent, 0.35);
+      C := mcAccent;
+    end
+    else
+      C := mcText;
+
+    if (Length(CurrentSong.Tracks) > 0) then
+      for LineIndex := 0 to High(CurrentSong.Tracks[0].Lines) do
+      begin
+        Ln := @CurrentSong.Tracks[0].Lines[LineIndex];
+        if (Length(Ln^.Notes) = 0) or (Ln^.HighNote < 0) then
+          Continue;
+        X := (Gap + Ln^.Notes[0].StartBeat - SongStart) / SongDur * MUI_W;
+        W := (Ln^.Notes[Ln^.HighNote].StartBeat + Ln^.Notes[Ln^.HighNote].Duration -
+              Ln^.Notes[0].StartBeat) / SongDur * MUI_W;
+        if (W < 2) then
+          W := 2;
+        if (pass = 0) then
+          MFillRect(X, 0, W, BAR_H, C, 0.45)
+        else
+          MFillRect(X, 0, W, BAR_H, C, 1);
+      end;
+
+    if (pass = 1) then
+      MClipEnd;
+  end;
+end;
+
 
 function PopupText(Rating: integer): UTF8String;
 begin
@@ -483,7 +671,7 @@ begin
   MText(X + 22 + TW + 16 + AW + 16, Y + 15, TimeText, 16, false, mcMuted, 1);
 end;
 
-procedure ModernSingHud(Progress: real; const TimeText: UTF8String);
+procedure ModernSingHud(CurTime, TotalTime: real; const TimeText: UTF8String);
 var
   N, I: integer;
   ShowScore, Scoring: boolean;
@@ -491,14 +679,9 @@ var
 begin
   MBegin;
 
-  // song progress along the very top
+  // song timeline with the lyric sections along the very top
   if ScreenSing.Settings.TimeBarVisible then
-  begin
-    if (Progress < 0) then Progress := 0;
-    if (Progress > 1) then Progress := 1;
-    MFillRect(0, 0, MUI_W, 4, mcText, 0.15);
-    MFillRect(0, 0, MUI_W * Progress, 4, mcAccent, 1);
-  end;
+    DrawTimeline(CurTime, TotalTime);
 
   Scoring := ScreenSing.Settings.ScoresVisible and not IsKaraoke;
   ShowScore := Scoring and ((Ini.SingScores = 1) or Party.bPartyGame);
@@ -507,7 +690,7 @@ begin
   if not Scoring then
   begin
     // scoring off: just the song
-    DrawSongChip(HUD_PAD, 26, false, TimeText);
+    DrawSongChip(HUD_PAD, 28, false, TimeText);
   end
   else if (N = 1) then
   begin
