@@ -98,6 +98,8 @@ procedure MClipEnd;
 
 // shapes
 procedure MFillRect(X, Y, W, H: single; const C: TMColor; A: single);
+// vertical fade: alpha ATop at the top edge to ABottom at the bottom edge
+procedure MFillGradientV(X, Y, W, H: single; const C: TMColor; ATop, ABottom: single);
 procedure MFillRound(X, Y, W, H, Radius: single; const C: TMColor; A: single);
 procedure MStrokeRound(X, Y, W, H, Radius, Thick: single; const C: TMColor; A: single);
 procedure MFillCircle(CX, CY, Radius: single; const C: TMColor; A: single);
@@ -250,6 +252,28 @@ end;
 procedure MFillRect(X, Y, W, H: single; const C: TMColor; A: single);
 begin
   Renderer.DrawQuad(X, Y, 0, W, H, C.R, C.G, C.B, A);
+end;
+
+procedure MFillGradientV(X, Y, W, H: single; const C: TMColor; ATop, ABottom: single);
+var
+  Quads: TQuadList;
+begin
+  SetLength(Quads, 1);
+  Quads[0].X := X;
+  Quads[0].Y := Y;
+  Quads[0].W := W;
+  Quads[0].H := H;
+  Quads[0].Z := 0;
+  Quads[0].Gradient := gdVertical;
+  Quads[0].ColR := C.R;
+  Quads[0].ColG := C.G;
+  Quads[0].ColB := C.B;
+  Quads[0].Alpha := ATop;
+  Quads[0].ColR2 := C.R;
+  Quads[0].ColG2 := C.G;
+  Quads[0].ColB2 := C.B;
+  Quads[0].Alpha2 := ABottom;
+  Renderer.DrawQuads(Quads);
 end;
 
 // perimeter of a rounded rect, clockwise, starting at the top-left arc

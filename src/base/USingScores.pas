@@ -183,6 +183,11 @@ type
 
       Visible:   boolean;  // visibility of all scores
       Enabled:   boolean;  // scores are changed, popups are moved etc.
+
+      // ui-v2: the latest line-bonus popup per player, for the Midnight HUD
+      ModernPopRating: array [0..11] of integer;
+      ModernPopDiff:   array [0..11] of integer;
+      ModernPopTime:   array [0..11] of cardinal;
       RBVisible: boolean;  // visibility of all rating bars
 
       // properties for reading position and playercount
@@ -471,6 +476,14 @@ begin
     else
       Cur.ScoreDiff := 0;
     Cur.Next := nil;
+
+    // ui-v2: remember it for the Midnight HUD
+    if (PlayerIndex <= High(ModernPopTime)) then
+    begin
+      ModernPopRating[PlayerIndex] := Cur.Rating;
+      ModernPopDiff[PlayerIndex] := Cur.ScoreDiff;
+      ModernPopTime[PlayerIndex] := Cur.TimeStamp;
+    end;
 
     // Log.LogError('TSingScores.SpawnPopUp| Player: ' + InttoStr(PlayerIndex) + ', Score: ' + InttoStr(Score) + ', ScoreDiff: ' + InttoStr(Cur.ScoreDiff));
 

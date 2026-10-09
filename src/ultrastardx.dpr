@@ -305,6 +305,7 @@ uses
   UScreenSong             in 'screens\UScreenSong.pas',
   UScreenSingController   in 'screens\controllers\UScreenSingController.pas',
   UScreenSingView         in 'screens\views\UScreenSingView.pas',
+  UModernSing            in 'screens\views\UModernSing.pas',
   UScreenScore            in 'screens\UScreenScore.pas',
   UScreenJukebox          in 'screens\UScreenJukebox.pas',
   UScreenOptions          in 'screens\UScreenOptions.pas',

@@ -216,7 +216,8 @@ uses
   UWebcam,
   UWebSDK,
   Classes,
-  Math;
+  Math,
+  UModernSing;
 
 const
   MAX_MESSAGE = 3;
@@ -843,6 +844,10 @@ begin
     Lyrics.LineColor_dis.B := Col.B;
     Lyrics.LineColor_dis.A := 1;
   end;
+
+  // ui-v2: Midnight lyrics placement and colours (bigger with scoring off)
+  if (Screens = 1) then
+    ModernSetupLyrics(Lyrics, Boolean(Ini.KaraokeMode));
 
   // deactivate pause
   Paused := false;

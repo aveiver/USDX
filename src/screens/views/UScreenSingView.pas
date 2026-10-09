@@ -233,7 +233,8 @@ uses
   UUnicodeUtils,
   UScreenSingController,
   UWebcam,
-  UWebSDK;
+  UWebSDK,
+  UModernSing;
 
 const
   MAX_MESSAGE = 3;
@@ -915,8 +916,9 @@ begin
     ScreenSing.fCurrentVideo.Draw;
   end;
 
-  // draw static menu (FG)
-  ScreenSing.DrawFG;
+  // draw static menu (FG) - ui-v2: the Midnight HUD replaces it
+  if not ModernSingActive then
+    ScreenSing.DrawFG;
 
   //Medley Countdown
   if ScreenSong.Mode = smMedley then
@@ -954,22 +956,44 @@ begin
     end;
   end;
 
-  // draw info lyric bar if not medley
-  if (ScreenSing.Settings.TimeBarVisible) then
-    DrawInfoLyricBar;
+  if ModernSingActive then
+  begin
+    // ui-v2: Midnight singing screen over the full-screen video
+    ModernSingBackdrop;
+    ModernSingLanes;
 
-  // always draw custom items
-  ScreenSing.Statics[StaticLyricsBar].Visible := ScreenSing.Settings.LyricsVisible;
-  ScreenSing.Statics[StaticLyricsBarDuet].Visible := ScreenSing.Settings.LyricsVisible and (CurrentSong.isDuet) and (PlayersPlay <> 1);
-  ScreenSing.Statics[StaticTimeBar].Visible := ScreenSing.Settings.TimeBarVisible;
-  SingDraw;
+    // lyrics: the classic lyric engine, placed and coloured for Midnight
+    if (ScreenSing.Settings.LyricsVisible) then
+    begin
+      ScreenSing.Lyrics.Draw(LyricsState.MidBeat);
+      SingDrawLyricHelper(0, 20, 380);
+    end;
 
-  // goldennotestarstwinkle
-  GoldenRec.SpawnRec;
+    if (TotalTime > 0) then
+      ModernSingHud(Max(CurLyricsTime, CurrentSong.Start) / TotalTime,
+        Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]))
+    else
+      ModernSingHud(0, Format('%s%.2d:%.2d', [DisplayPrefix, DisplayMin, DisplaySec]));
+  end
+  else
+  begin
+    // draw info lyric bar if not medley
+    if (ScreenSing.Settings.TimeBarVisible) then
+      DrawInfoLyricBar;
 
-  // draw scores
-  if (ScreenSing.Settings.ScoresVisible) and ((Ini.SingScores = 1) or (Party.bPartyGame)) then
-    ScreenSing.Scores.Draw;
+    // always draw custom items
+    ScreenSing.Statics[StaticLyricsBar].Visible := ScreenSing.Settings.LyricsVisible;
+    ScreenSing.Statics[StaticLyricsBarDuet].Visible := ScreenSing.Settings.LyricsVisible and (CurrentSong.isDuet) and (PlayersPlay <> 1);
+    ScreenSing.Statics[StaticTimeBar].Visible := ScreenSing.Settings.TimeBarVisible;
+    SingDraw;
+
+    // goldennotestarstwinkle
+    GoldenRec.SpawnRec;
+
+    // draw scores
+    if (ScreenSing.Settings.ScoresVisible) and ((Ini.SingScores = 1) or (Party.bPartyGame)) then
+      ScreenSing.Scores.Draw;
+  end;
 
   FadeMessage();
 
