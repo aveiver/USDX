@@ -45,7 +45,14 @@ interface
 {$I switches.inc}
 
 uses
-  ULyrics;
+  ULyrics,
+  UModernUI;
+
+// one lyric line in Helvetica, centred on CenterX. Active = the line being
+// sung (Sung colour for what's done, Todo for the rest); otherwise the whole
+// line uses Next. Long lines shrink to fit; "~" hold markers are hidden.
+procedure ModernDrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real;
+  Active: boolean; const Sung, Todo, Next: TMColor);
 
 // true when the Midnight singing screen is used (one screen, not a duet)
 function ModernSingActive: boolean;
@@ -79,7 +86,6 @@ uses
   UGraphic,
   UIni,
   ULanguage,
-  UModernUI,
   UMusic,
   UNote,
   UParty,
@@ -348,7 +354,8 @@ end;
 
 { --- lyrics --- }
 
-procedure DrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real; Active: boolean);
+procedure ModernDrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real;
+  Active: boolean; const Sung, Todo, Next: TMColor);
 var
   I, N: integer;
   Total, X, S, Fr: single;
@@ -404,21 +411,26 @@ begin
     if (Txt[I] = '') then
       Continue;
     if not Active then
-      MText(Pos[I], Y, Txt[I], S, true, mcMuted, 1)
+      MText(Pos[I], Y, Txt[I], S, true, Next, 1)
     else if (Beat >= Line.Words[I].Start + Line.Words[I].Length) then
-      MText(Pos[I], Y, Txt[I], S, true, mcAccent, 1)
+      MText(Pos[I], Y, Txt[I], S, true, Sung, 1)
     else if (Beat <= Line.Words[I].Start) or (Line.Words[I].Length <= 0) then
-      MText(Pos[I], Y, Txt[I], S, true, mcText, 1)
+      MText(Pos[I], Y, Txt[I], S, true, Todo, 1)
     else
     begin
-      // the word being sung fills in lime from left to right
-      MText(Pos[I], Y, Txt[I], S, true, mcText, 1);
+      // the word being sung fills in from left to right
+      MText(Pos[I], Y, Txt[I], S, true, Todo, 1);
       Fr := (Beat - Line.Words[I].Start) / Line.Words[I].Length;
       MClipBegin(MRect(Pos[I], Y - S * 0.5, Wid[I] * Fr, S * 2));
-      MText(Pos[I], Y, Txt[I], S, true, mcAccent, 1);
+      MText(Pos[I], Y, Txt[I], S, true, Sung, 1);
       MClipEnd;
     end;
   end;
+end;
+
+procedure DrawLyricLine(Line: TLyricLine; CenterX, Y, Size: single; Beat: real; Active: boolean);
+begin
+  ModernDrawLyricLine(Line, CenterX, Y, Size, Beat, Active, mcAccent, mcText, mcMuted);
 end;
 
 procedure ModernSingLyrics(Beat: real);

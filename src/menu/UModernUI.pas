@@ -133,6 +133,8 @@ procedure MIconBack(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconForward(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconSearch(CX, CY, Size: single; const C: TMColor; A: single);
 procedure MIconMic(CX, CY, Size: single; const C: TMColor; A: single);
+// thick line with round caps
+procedure MLine(X1, Y1, X2, Y2, Thick: single; const C: TMColor; A: single);
 
 // smooth movement: moves Cur towards Target, frame-rate independent
 function MApproach(Cur, Target, Speed: single): single;

@@ -42,6 +42,7 @@ uses
   UIni,
   ULyrics,
   UMenu,
+  UModernUI,
   UMusic,
   UPath,
   UPlaylist,
@@ -167,6 +168,38 @@ type
     fMusicSync:    TMusicSyncSource;
     fTimebarMode:  TTimebarMode;
 
+    // ui-v2 (Midnight) jukebox
+    FDisplayVisible: boolean;           // display settings card open
+    FDisplayRow:     integer;           // 0 video, 1 lyrics, 2 shade, 3-5 colours, 6 buttons
+    FDisplayBtn:     integer;           // 0 reset, 1 save
+    FDisplaySaved:   cardinal;          // tick of the last save (for "Saved")
+    FDisplayCard:    TMRect;
+    FDispRects:      array of TMRect;   // clickable parts of the card
+    FDispCodes:      array of integer;  // Row * 100 + value (see DisplayClick)
+    FBarRects:       array[0..8] of TMRect;
+    FPanelRows:      array of TMRect;
+    FPanelRowIdx:    array of integer;
+    FChipRects:      array[0..2] of TMRect;
+    FSearchRect:     TMRect;
+    FPanelTop:       integer;
+
+    function BarShown: boolean;
+    procedure ShowBar;
+    procedure SyncCurrentIndex;
+    procedure SetSort(Order: integer);
+    procedure ToggleSearch;
+    procedure OpenDisplay;
+    procedure ChangeDisplayValue(Row, Delta: integer);
+    procedure DisplayClick(Code: integer; VX: single);
+    function ParseDisplayInput(PressedKey: cardinal): boolean;
+    function ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+    procedure AddDispRect(const R: TMRect; Code: integer);
+    procedure DrawModernLyrics;
+    procedure DrawModernBar;
+    procedure DrawModernPanel;
+    procedure DrawModernDisplay;
+    procedure DrawModern;
+
   protected
     eSongLoaded:       THookableEvent; //< event is called after lyrics of a song are loaded on OnShow
     Paused:            boolean; //pause Mod
@@ -265,6 +298,21 @@ type
 const
   ID='ID_041';   //for help system
 
+// ui-v2 jukebox settings, kept in config.ini [JukeboxUI]
+var
+  JukeboxFit:      integer = 0;    // video: 0 fill (crop), 1 fit (letterbox), 2 halfway
+  JukeboxLyricPos: integer = 1;    // 1 bottom, 2 middle, 3 top
+  JukeboxShade:    integer = 6;    // shade behind the lyrics, 0..10
+  JukeboxColSung:  integer = 0;    // index into the sung palette
+  JukeboxColTodo:  integer = 0;    // still to sing
+  JukeboxColNext:  integer = 0;    // next line
+  JukeboxStartShuffle: boolean = false;
+  JukeboxStartLyrics:  boolean = true;
+  JukeboxStartRepeat:  boolean = false;
+
+procedure JukeboxLoadSettings;
+procedure JukeboxSaveSettings;
+
 implementation
 
 uses
@@ -283,9 +331,11 @@ uses
   URecord,
   USkins,
   UScreenJukeboxOptions,
+  UModernSing,
   USong,
   UUnicodeUtils,
   Classes,
+  IniFiles,
   Math;
 
 const
@@ -554,8 +604,10 @@ begin
   ActualInteraction := 0;
   Interaction := 0;
   ListMin := 0;
+  FPanelTop := 0;
 
   Button[SongDescription[0]].SetSelect(false);
+  SyncCurrentIndex;
 end;
 
 
@@ -722,7 +774,9 @@ var
   I, Max: integer;
   Time: real;
 begin
-  Result := true;
+  // ui-v2: the Midnight jukebox has its own hit areas
+  Result := ParseMouseModern(MouseButton, BtnDown, X, Y);
+  Exit;
 
   //Jukebox Screen Extensions (Options)
   if (ScreenJukeboxOptions.Visible) then
@@ -1256,6 +1310,7 @@ begin
   OrderMode := true;
 
   SongListSort(OrderType);
+  SyncCurrentIndex;
 end;
 
 procedure TScreenJukebox.ChangeSongPosition(Start, Final: integer);
@@ -1323,6 +1378,14 @@ var
 begin
   Result := true;
 
+  // ui-v2: display settings card takes all keys while open
+  if FDisplayVisible then
+  begin
+    if PressedDown then
+      Result := ParseDisplayInput(PressedKey);
+    Exit;
+  end;
+
   //Jukebox Screen Extensions (Options)
   if (ScreenJukeboxOptions.Visible) then
   begin
@@ -1332,6 +1395,10 @@ begin
 
   SDL_ModState := SDL_GetModState and (KMOD_LSHIFT + KMOD_RSHIFT +
     KMOD_LCTRL + KMOD_RCTRL + KMOD_LALT + KMOD_RALT);
+
+  // ui-v2: any key brings the player bar up for a moment
+  if PressedDown and not SongListVisible then
+    ShowBar;
 
   if (PressedDown) then
   begin // key down
@@ -1567,8 +1634,7 @@ begin
         begin
           if not (FindSongList) or not (SongListVisible) then
           begin
-            ScreenJukeboxOptions.Visible := true;
-            Button[JukeboxOptions].SetSelect(false);
+            OpenDisplay;
             Exit;
           end;
         end;
@@ -1642,7 +1708,14 @@ begin
         SDLK_ESCAPE:
         begin
           if (SongListVisible) then
-            SongListVisible := false
+          begin
+            SongListVisible := false;
+            if FindSongList then
+            begin
+              FindSongList := false;
+              StopTextInput;
+            end;
+          end
           else
             ScreenPopupCheck.ShowPopup('MSG_END_JUKEBOX', OnEscapeJukebox, nil, false)
         end;
@@ -1799,6 +1872,7 @@ begin
           if not(SDL_ModState = KMOD_LALT) and not(SDL_ModState = KMOD_LSHIFT) and (not SongListVisible) then
           begin
             SongListVisible := true;
+            ActualInteraction := CurrentSongList;
             LastTick := SDL_GetTicks();
           end;
 
@@ -1841,6 +1915,7 @@ begin
           if not(SDL_ModState = KMOD_LALT) and not(SDL_ModState = KMOD_LSHIFT) and (not SongListVisible) then
           begin
             SongListVisible := true;
+            ActualInteraction := CurrentSongList;
             LastTick := SDL_GetTicks();
           end;
 
@@ -2145,7 +2220,10 @@ begin
   end; // case
 
   SongMenuVisible := false;
-  SongListVisible := true;
+  SongListVisible := false;
+  FDisplayVisible := false;
+  FPanelTop := 0;
+  JukeboxLoadSettings;
 
   Log.LogStatus('End', 'OnShow');
 end;
@@ -2153,6 +2231,15 @@ end;
 procedure TScreenJukebox.OnShowFinish();
 begin
   Reset;
+
+  // ui-v2: options picked on the jukebox start screen
+  ShowLyrics := JukeboxStartLyrics;
+  RepeatSongList := JukeboxStartRepeat;
+  if JukeboxStartShuffle and (Length(JukeboxVisibleSongs) > 1) then
+  begin
+    RandomList();
+    CurrentSongList := 0;
+  end;
 
   PlayMusic(0, true);
 end;
@@ -2289,13 +2376,20 @@ begin
       end;
     end;
 
-    fCurrentVideo.AspectCorrection := acoLetterBox;
+    // ui-v2: the display settings choose how the video fits the screen
+    case JukeboxFit of
+      1: fCurrentVideo.AspectCorrection := acoLetterBox;
+      2: fCurrentVideo.AspectCorrection := acoHalfway;
+    else
+      fCurrentVideo.AspectCorrection := acoCrop;
+    end;
     fCurrentVideo.SetScreen(ScreenAct);
     fCurrentVideo.Draw;
     //DrawBlackBars();
   end;
 
-  SingDrawJukebox;
+  // ui-v2: lyrics are drawn by DrawModern below
+  //SingDrawJukebox;
 
   // check for music finish
   //Log.LogError('Check for music finish: ' + BoolToStr(Music.Finished) + ' ' + FloatToStr(LyricsState.CurrentTime*1000) + ' ' + IntToStr(CurrentSong.Finish));
@@ -2320,62 +2414,10 @@ begin
     end;
   end;
 
-  if (ScreenAct = 1) and (SongListVisible) then
-    DrawPlaylist;
+  // ui-v2: Midnight overlays (lyrics, player bar, up next list, display card)
+  if (ScreenAct = 1) then
+    DrawModern;
 
-  if (ScreenAct = 1) and (SongMenuVisible) then
-    DrawSongMenu;
-
-  if (ScreenAct = 1) and (ScreenJukeboxOptions.Visible) then
-    ScreenJukeboxOptions.Draw;
-
-  // draw time-bar
-  if (ScreenAct = 1) and (ScreenJukebox.SongListVisible or ScreenJukebox.SongMenuVisible) then
-    SingDrawJukeboxTimeBar();
-
-  DrawSongInfo;
-
-  // for move song
-  if (Button[SongDescriptionClone].Visible) then
-  begin
-    LastTick := SDL_GetTicks();
-
-    if (MoveSong) then
-    begin
-      DrawMoveLine();
-
-      if (MoveDown) then
-      begin
-        if (SDL_GetTicks() - MouseDownList >= MAX_TIME_MOUSE_CHANGELIST) then
-        begin
-          MouseDownList := SDL_GetTicks();
-
-          if (ListMin + 9 < High(JukeboxVisibleSongs)) then
-          begin
-            ListMin := ListMin + 1;
-            ActualInteraction := ActualInteraction + 1;
-          end;
-        end;
-      end;
-
-      if (MoveUp) then
-      begin
-        if (SDL_GetTicks() - MouseUpList >= MAX_TIME_MOUSE_CHANGELIST) then
-        begin
-          MouseUpList := SDL_GetTicks();
-
-          if (ListMin > 0) then
-          begin
-            ListMin := ListMin - 1;
-            ActualInteraction := ActualInteraction - 1;
-          end;
-        end;
-      end;
-
-    end;
-
-    Button[SongDescriptionClone].Draw();
-  end;
   if Paused = true then
      SDL_Delay(33);
   Result := true;
@@ -2701,8 +2743,11 @@ begin
 
   CurrentSongID := JukeboxVisibleSongs[CurrentSongList];
 
-  if (not SongListVisibleFix) then
-    SongListVisible := ShowList;
+  // ui-v2: picking a song closes the up next list; the player bar shows
+  // what's now playing
+  if ShowList then
+    SongListVisible := false;
+  ShowBar;
 
   Play();
   except
@@ -2907,6 +2952,964 @@ begin
 
     ScreenJukeboxOptions.LoadSongOptions(Opts);
   end;
+end;
+
+{ =====================================================================
+  ui-v2: Midnight jukebox
+  - the video fills the screen; lyrics read along (nobody is scored)
+  - a player bar slides up on any key or mouse move and hides again
+  - "Up next" list as a side panel (search, sort, shuffle, pick a song)
+  - display card: video fit, lyric position, shade and colours
+  ===================================================================== }
+
+const
+  JB_PAD     = 32;
+  JB_BAR_H   = 96;
+  JB_PANEL_W = 480;
+  JB_SHOW_MS = 4000;
+  JB_ROWS    = 8;
+  JB_ROW_H   = 56;
+
+  JSungCols: array[0..4] of cardinal = ($D4FF4F, $7CC4FF, $FF8A5B, $F5C542, $FF5C8A);
+  JTodoCols: array[0..4] of cardinal = ($F2F3F5, $FFE8A3, $BFE6FF, $D8C8FF, $C9F2D6);
+  JNextCols: array[0..4] of cardinal = ($A9ADB8, $6E7380, $8FA3BF, $B3A08C, $9DB39A);
+
+var
+  JSettingsLoaded: boolean = false;
+
+function JClamp(V, Lo, Hi: integer): integer;
+begin
+  if (V < Lo) then
+    Result := Lo
+  else if (V > Hi) then
+    Result := Hi
+  else
+    Result := V;
+end;
+
+procedure JukeboxLoadSettings;
+var
+  F: TIniFile;
+begin
+  if JSettingsLoaded then
+    Exit;
+  JSettingsLoaded := true;
+  try
+    F := TIniFile.Create(Ini.Filename.ToNative);
+    try
+      JukeboxFit      := JClamp(F.ReadInteger('JukeboxUI', 'VideoFit', 0), 0, 2);
+      JukeboxLyricPos := JClamp(F.ReadInteger('JukeboxUI', 'LyricPosition', 1), 1, 3);
+      JukeboxShade    := JClamp(F.ReadInteger('JukeboxUI', 'Shade', 6), 0, 10);
+      JukeboxColSung  := JClamp(F.ReadInteger('JukeboxUI', 'SungColour', 0), 0, 4);
+      JukeboxColTodo  := JClamp(F.ReadInteger('JukeboxUI', 'TodoColour', 0), 0, 4);
+      JukeboxColNext  := JClamp(F.ReadInteger('JukeboxUI', 'NextColour', 0), 0, 4);
+      JukeboxStartShuffle := F.ReadBool('JukeboxUI', 'Shuffle', false);
+      JukeboxStartLyrics  := F.ReadBool('JukeboxUI', 'Lyrics', true);
+      JukeboxStartRepeat  := F.ReadBool('JukeboxUI', 'Repeat', false);
+    finally
+      F.Free;
+    end;
+  except
+    on E: Exception do
+      Log.LogWarn('Could not read jukebox settings: ' + E.Message, 'JukeboxLoadSettings');
+  end;
+end;
+
+procedure JukeboxSaveSettings;
+var
+  F: TIniFile;
+begin
+  try
+    F := TIniFile.Create(Ini.Filename.ToNative);
+    try
+      F.WriteInteger('JukeboxUI', 'VideoFit', JukeboxFit);
+      F.WriteInteger('JukeboxUI', 'LyricPosition', JukeboxLyricPos);
+      F.WriteInteger('JukeboxUI', 'Shade', JukeboxShade);
+      F.WriteInteger('JukeboxUI', 'SungColour', JukeboxColSung);
+      F.WriteInteger('JukeboxUI', 'TodoColour', JukeboxColTodo);
+      F.WriteInteger('JukeboxUI', 'NextColour', JukeboxColNext);
+      F.WriteBool('JukeboxUI', 'Shuffle', JukeboxStartShuffle);
+      F.WriteBool('JukeboxUI', 'Lyrics', JukeboxStartLyrics);
+      F.WriteBool('JukeboxUI', 'Repeat', JukeboxStartRepeat);
+      F.UpdateFile;
+    finally
+      F.Free;
+    end;
+  except
+    on E: Exception do
+      Log.LogWarn('Could not save jukebox settings: ' + E.Message, 'JukeboxSaveSettings');
+  end;
+end;
+
+function JTime(T: real): UTF8String;
+var
+  Secs: integer;
+begin
+  if (T < 0) then
+    T := 0;
+  Secs := Round(T);
+  Result := Format('%d:%.2d', [Secs div 60, Secs mod 60]);
+end;
+
+// small round icon button; returns its rect
+function JRoundButton(CX, CY, R: single; const Bg: TMColor): TMRect;
+begin
+  MFillCircle(CX, CY, R, Bg, 1);
+  Result := MRect(CX - R, CY - R, R * 2, R * 2);
+end;
+
+procedure JCover(Tex: TTexture; X, Y, Size, Radius: single; const Bg: TMColor);
+begin
+  if (Tex <> nil) and not Tex.IsEmpty then
+    MDrawTex(Tex, X, Y, Size, Size, 1)
+  else
+  begin
+    MFillRect(X, Y, Size, Size, mcSurface2, 1);
+    MIconNote(X + Size / 2, Y + Size / 2, Size * 0.4, mcBorder, 1);
+  end;
+  MCornerMask(X, Y, Size, Size, Radius, Bg);
+end;
+
+function JSongCover(ID: integer): TTexture;
+begin
+  Result := nil;
+  if (ID >= 0) and (ID <= High(CatSongs.Song)) then
+    Result := CatSongs.Song[ID].CoverTex;
+end;
+
+function TScreenJukebox.BarShown: boolean;
+begin
+  Result := Paused or (SDL_GetTicks() - LastSongMenuTick < JB_SHOW_MS);
+end;
+
+procedure TScreenJukebox.ShowBar;
+begin
+  LastSongMenuTick := SDL_GetTicks();
+  SongMenuVisible := true;
+end;
+
+procedure TScreenJukebox.SyncCurrentIndex;
+var
+  I: integer;
+begin
+  for I := 0 to High(JukeboxVisibleSongs) do
+    if (JukeboxVisibleSongs[I] = CurrentSongID) then
+    begin
+      CurrentSongList := I;
+      Exit;
+    end;
+end;
+
+procedure TScreenJukebox.SetSort(Order: integer);
+begin
+  LastTick := SDL_GetTicks();
+  Button[JukeboxRandomSongList].SetSelect(false);
+  Button[JukeboxSongListOrder].SetSelect(true);
+  OrderType := Order;
+  OrderMode := true;
+  RandomMode := false;
+  SongListSort(OrderType);
+  SyncCurrentIndex;
+end;
+
+procedure TScreenJukebox.ToggleSearch;
+begin
+  LastTick := SDL_GetTicks();
+  FindSongList := not FindSongList;
+  if (Filter = '') and FindSongList then
+    Button[JukeboxFindSong].Text[0].Text := '';
+  Button[JukeboxFindSong].SetSelect(FindSongList);
+  SetTextInput(FindSongList);
+  if FindSongList then
+    FilterSongList(Filter)
+  else
+  begin
+    Filter := '';
+    Button[JukeboxFindSong].Text[0].Text := '';
+    FilterSongList('');
+  end;
+end;
+
+procedure TScreenJukebox.OpenDisplay;
+begin
+  SongListVisible := false;
+  FindSongList := false;
+  StopTextInput;
+  FDisplayVisible := true;
+  FDisplayRow := 0;
+  FDisplayBtn := 1;
+end;
+
+procedure TScreenJukebox.ChangeDisplayValue(Row, Delta: integer);
+var
+  V: integer;
+begin
+  case Row of
+    0: JukeboxFit := (JukeboxFit + Delta + 3) mod 3;
+    1:
+      begin
+        // 0 = off, 1 bottom, 2 middle, 3 top
+        if ShowLyrics then
+          V := JukeboxLyricPos
+        else
+          V := 0;
+        V := JClamp(V + Delta, 0, 3);
+        ShowLyrics := (V <> 0);
+        if (V <> 0) then
+          JukeboxLyricPos := V;
+      end;
+    2: JukeboxShade := JClamp(JukeboxShade + Delta, 0, 10);
+    3: JukeboxColSung := (JukeboxColSung + Delta + 5) mod 5;
+    4: JukeboxColTodo := (JukeboxColTodo + Delta + 5) mod 5;
+    5: JukeboxColNext := (JukeboxColNext + Delta + 5) mod 5;
+    6: FDisplayBtn := 1 - FDisplayBtn;
+  end;
+end;
+
+// codes: Row * 100 + value; 200 = shade slider (value from X);
+// 600 reset, 601 save, 700 close
+procedure TScreenJukebox.DisplayClick(Code: integer; VX: single);
+var
+  Row, Value, I: integer;
+begin
+  Row := Code div 100;
+  Value := Code mod 100;
+  case Row of
+    0: JukeboxFit := Value;
+    1:
+      begin
+        ShowLyrics := (Value <> 0);
+        if (Value <> 0) then
+          JukeboxLyricPos := Value;
+      end;
+    2:
+      begin
+        for I := 0 to High(FDispCodes) do
+          if (FDispCodes[I] = 200) then
+            JukeboxShade := JClamp(Round((VX - FDispRects[I].X) / FDispRects[I].W * 10), 0, 10);
+      end;
+    3: JukeboxColSung := Value;
+    4: JukeboxColTodo := Value;
+    5: JukeboxColNext := Value;
+    6:
+      begin
+        if (Value = 0) then
+        begin
+          JukeboxFit := 0;
+          JukeboxLyricPos := 1;
+          JukeboxShade := 6;
+          JukeboxColSung := 0;
+          JukeboxColTodo := 0;
+          JukeboxColNext := 0;
+          ShowLyrics := true;
+        end
+        else
+        begin
+          JukeboxSaveSettings;
+          FDisplaySaved := SDL_GetTicks();
+        end;
+      end;
+    7: FDisplayVisible := false;
+  end;
+  if (Row <= 6) then
+    FDisplayRow := Row;
+end;
+
+function TScreenJukebox.ParseDisplayInput(PressedKey: cardinal): boolean;
+begin
+  Result := true;
+  case PressedKey of
+    SDLK_ESCAPE, SDLK_BACKSPACE, SDLK_O:
+      FDisplayVisible := false;
+    SDLK_UP:
+      FDisplayRow := JClamp(FDisplayRow - 1, 0, 6);
+    SDLK_DOWN:
+      FDisplayRow := JClamp(FDisplayRow + 1, 0, 6);
+    SDLK_LEFT:
+      ChangeDisplayValue(FDisplayRow, -1);
+    SDLK_RIGHT:
+      ChangeDisplayValue(FDisplayRow, 1);
+    SDLK_RETURN:
+      if (FDisplayRow = 6) then
+        DisplayClick(600 + FDisplayBtn, 0)
+      else
+        FDisplayRow := 6;
+  end;
+end;
+
+procedure TScreenJukebox.AddDispRect(const R: TMRect; Code: integer);
+begin
+  SetLength(FDispRects, Length(FDispRects) + 1);
+  SetLength(FDispCodes, Length(FDispCodes) + 1);
+  FDispRects[High(FDispRects)] := R;
+  FDispCodes[High(FDispCodes)] := Code;
+end;
+
+function TScreenJukebox.ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
+var
+  VX, VY, Fr: single;
+  I: integer;
+  WasShown: boolean;
+begin
+  Result := true;
+  MWindowToVirtual(X, Y, VX, VY);
+
+  // mouse moved (or a button released): just bring the bar up
+  if not BtnDown then
+  begin
+    if not SongListVisible and not FDisplayVisible then
+      ShowBar;
+    Exit;
+  end;
+
+  { display card }
+  if FDisplayVisible then
+  begin
+    if (MouseButton = SDL_BUTTON_RIGHT) then
+    begin
+      FDisplayVisible := false;
+      Exit;
+    end;
+    if (MouseButton <> SDL_BUTTON_LEFT) then
+      Exit;
+    for I := 0 to High(FDispRects) do
+      if MHit(VX, VY, FDispRects[I]) then
+      begin
+        DisplayClick(FDispCodes[I], VX);
+        Exit;
+      end;
+    if not MHit(VX, VY, FDisplayCard) then
+      FDisplayVisible := false;
+    Exit;
+  end;
+
+  { up next panel }
+  if SongListVisible then
+  begin
+    LastTick := SDL_GetTicks();
+    case MouseButton of
+      SDL_BUTTON_WHEELDOWN:
+        begin
+          for I := 1 to 3 do
+            ParseInput(SDLK_DOWN, 0, true);
+          Exit;
+        end;
+      SDL_BUTTON_WHEELUP:
+        begin
+          for I := 1 to 3 do
+            ParseInput(SDLK_UP, 0, true);
+          Exit;
+        end;
+      SDL_BUTTON_RIGHT:
+        begin
+          SongListVisible := false;
+          Exit;
+        end;
+    end;
+    if (MouseButton <> SDL_BUTTON_LEFT) then
+      Exit;
+
+    // click on the video closes the list
+    if (VX < MUI_W - JB_PANEL_W) then
+    begin
+      SongListVisible := false;
+      Exit;
+    end;
+
+    if MHit(VX, VY, FSearchRect) then
+    begin
+      ToggleSearch;
+      Exit;
+    end;
+    if MHit(VX, VY, FChipRects[0]) then
+    begin
+      SetSort(1);
+      Exit;
+    end;
+    if MHit(VX, VY, FChipRects[1]) then
+    begin
+      SetSort(2);
+      Exit;
+    end;
+    if MHit(VX, VY, FChipRects[2]) then
+    begin
+      RandomList();
+      Exit;
+    end;
+
+    // click a song to select it, click it again to play it
+    for I := 0 to High(FPanelRows) do
+      if MHit(VX, VY, FPanelRows[I]) then
+      begin
+        if (FPanelRowIdx[I] = ActualInteraction) then
+          Result := ParseInput(SDLK_RETURN, 0, true)
+        else
+          ActualInteraction := FPanelRowIdx[I];
+        Exit;
+      end;
+    Exit;
+  end;
+
+  { player bar }
+  if (MouseButton = SDL_BUTTON_RIGHT) then
+  begin
+    ScreenPopupCheck.ShowPopup('MSG_END_JUKEBOX', OnEscapeJukebox, nil, true);
+    Exit;
+  end;
+  if (MouseButton <> SDL_BUTTON_LEFT) then
+    Exit;
+
+  WasShown := BarShown;
+  ShowBar;
+  // the first click only reveals the bar
+  if not WasShown then
+    Exit;
+
+  if MHit(VX, VY, FBarRects[0]) then
+    Result := ParseInput(SDLK_LEFT, 0, true)
+  else if MHit(VX, VY, FBarRects[1]) then
+    Pause
+  else if MHit(VX, VY, FBarRects[2]) then
+    Result := ParseInput(SDLK_RIGHT, 0, true)
+  else if MHit(VX, VY, FBarRects[3]) then
+  begin
+    Fr := (VX - FBarRects[3].X) / FBarRects[3].W;
+    if (Fr < 0) then
+      Fr := 0;
+    if (Fr > 1) then
+      Fr := 1;
+    ChangeTime(Fr * LyricsState.TotalTime);
+  end
+  else if MHit(VX, VY, FBarRects[4]) then
+    RandomList()
+  else if MHit(VX, VY, FBarRects[5]) then
+    RepeatSongList := not RepeatSongList
+  else if MHit(VX, VY, FBarRects[6]) then
+    ShowLyrics := not ShowLyrics
+  else if MHit(VX, VY, FBarRects[7]) then
+  begin
+    SongListVisible := true;
+    ActualInteraction := CurrentSongList;
+  end
+  else if MHit(VX, VY, FBarRects[8]) then
+    OpenDisplay;
+end;
+
+{ --- drawing --- }
+
+procedure TScreenJukebox.DrawModernLyrics;
+var
+  CurY, NextY, Sh: single;
+  Sung, Todo, Nxt: TMColor;
+begin
+  if not ShowLyrics or SongListVisible then
+    Exit;
+  // as before: start showing the lyrics 3 seconds before the first line
+  if not (LyricsStart or (LyricsState.GetCurrentTime() * 1000 >= LyricsState.StartTime - 3000)) then
+    Exit;
+  LyricsStart := true;
+
+  Sh := JukeboxShade / 10;
+  case JukeboxLyricPos of
+    2:
+      begin
+        CurY := 318;
+        NextY := 374;
+        MFillGradientV(0, 220, MUI_W, 100, mcBg, 0, Sh);
+        MFillGradientV(0, 320, MUI_W, 120, mcBg, Sh, 0);
+      end;
+    3:
+      begin
+        CurY := 96;
+        NextY := 152;
+        MFillGradientV(0, 0, MUI_W, 240, mcBg, Sh, 0);
+      end;
+  else
+    begin
+      CurY := 500;
+      NextY := 556;
+      MFillGradientV(0, 380, MUI_W, MUI_H - 380, mcBg, 0, Sh);
+    end;
+  end;
+
+  Sung := MColor(JSungCols[JukeboxColSung]);
+  Todo := MColor(JTodoCols[JukeboxColTodo]);
+  Nxt := MColor(JNextCols[JukeboxColNext]);
+  ModernDrawLyricLine(Lyrics.GetUpperLine(), MUI_W / 2, CurY, 40, LyricsState.MidBeat, true, Sung, Todo, Nxt);
+  ModernDrawLyricLine(Lyrics.GetLowerLine(), MUI_W / 2, NextY, 24, LyricsState.MidBeat, false, Sung, Todo, Nxt);
+end;
+
+procedure TScreenJukebox.DrawModernBar;
+var
+  R: TMRect;
+  X, Y, W, CX, CY, PX, PW, Fr, CurT, TotT: single;
+  NextIdx, I: integer;
+  S: UTF8String;
+  IC: TMColor;
+begin
+  MFillGradientV(0, 470, MUI_W, MUI_H - 470, mcBg, 0, 0.85);
+
+  { up next chip, top right }
+  NextIdx := CurrentSongList + 1;
+  if (NextIdx > High(JukeboxVisibleSongs)) and RepeatSongList then
+    NextIdx := 0;
+  if (NextIdx >= 0) and (NextIdx <= High(JukeboxVisibleSongs)) and (NextIdx <> CurrentSongList) then
+  begin
+    S := CatSongs.Song[JukeboxVisibleSongs[NextIdx]].Title + '  -  ' + CatSongs.Song[JukeboxVisibleSongs[NextIdx]].Artist;
+    W := MTextW(S, 15, true) + 76;
+    if (W > 560) then
+      W := 560;
+    X := MUI_W - JB_PAD - W;
+    Y := 26;
+    MFillRound(X, Y, W, 50, 25, mcSurface, 1);
+    MStrokeRound(X, Y, W, 50, 25, 1, mcBorder, 1);
+    MFillCircle(X + 25, Y + 25, 18, mcSurface2, 1);
+    MIconNote(X + 25, Y + 25, 16, mcMuted, 1);
+    MText(X + 52, Y + 8, 'Up next', 12, false, mcMuted, 1);
+    MText(X + 52, Y + 24, S, 15, true, mcText, 1, mtaLeft, W - 70);
+  end;
+
+  { the bar }
+  R := MRect(JB_PAD, MUI_H - 28 - JB_BAR_H, MUI_W - 2 * JB_PAD, JB_BAR_H);
+  MFillRound(R.X, R.Y, R.W, R.H, 28, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, 28, 1, mcBorder, 1);
+
+  // cover, title, artist
+  JCover(Statics[StaticCover].Texture, R.X + 14, R.Y + 14, 68, 16, mcSurface);
+  MText(R.X + 100, R.Y + 24, CurrentSong.Title, 20, true, mcText, 1, mtaLeft, 250);
+  MText(R.X + 100, R.Y + 52, CurrentSong.Artist, 15, false, mcMuted, 1, mtaLeft, 250);
+
+  // previous, play/pause, next
+  CY := R.Y + R.H / 2;
+  CX := R.X + 394;
+  FBarRects[0] := JRoundButton(CX, CY, 22, mcSurface2);
+  Renderer.DrawTriangle(CX + 6, CY - 8, CX - 5, CY, CX + 6, CY + 8, 0, mcText.R, mcText.G, mcText.B, 1);
+  MFillRect(CX - 8, CY - 8, 3, 16, mcText, 1);
+
+  CX := CX + 58;
+  FBarRects[1] := JRoundButton(CX, CY, 29, mcAccent);
+  if Paused then
+    MIconPlay(CX + 2, CY, 20, mcOnAccent, 1)
+  else
+  begin
+    MFillRound(CX - 8, CY - 10, 5, 20, 2, mcOnAccent, 1);
+    MFillRound(CX + 3, CY - 10, 5, 20, 2, mcOnAccent, 1);
+  end;
+
+  CX := CX + 58;
+  FBarRects[2] := JRoundButton(CX, CY, 22, mcSurface2);
+  Renderer.DrawTriangle(CX - 6, CY - 8, CX + 5, CY, CX - 6, CY + 8, 0, mcText.R, mcText.G, mcText.B, 1);
+  MFillRect(CX + 5, CY - 8, 3, 16, mcText, 1);
+
+  // progress
+  CurT := LyricsState.GetCurrentTime();
+  TotT := LyricsState.TotalTime;
+  PX := CX + 22 + 66;
+  PW := (R.X + R.W - 22 - 5 * 44 - 4 * 8) - 66 - PX;
+  if (TotT > 0) then
+    Fr := CurT / TotT
+  else
+    Fr := 0;
+  if (Fr < 0) then
+    Fr := 0;
+  if (Fr > 1) then
+    Fr := 1;
+  MText(PX - 12, CY - 9, JTime(CurT), 14, false, mcMuted, 1, mtaRight);
+  MFillRound(PX, CY - 3, PW, 6, 3, mcBorder, 1);
+  if (PW * Fr > 1) then
+    MFillRound(PX, CY - 3, PW * Fr, 6, 3, mcAccent, 1);
+  MFillCircle(PX + PW * Fr, CY, 8, mcText, 1);
+  MText(PX + PW + 12, CY - 9, '-' + JTime(TotT - CurT), 14, false, mcMuted, 1);
+  FBarRects[3] := MRect(PX, CY - 18, PW, 36);
+
+  // shuffle, repeat, lyrics, up next list, display
+  CX := R.X + R.W - 22 - 5 * 44 - 4 * 8 + 22;
+  for I := 4 to 8 do
+  begin
+    FBarRects[I] := JRoundButton(CX, CY, 22, mcSurface2);
+    case I of
+      4:
+        begin
+          if RandomMode then IC := mcAccent else IC := mcMuted;
+          MLine(CX - 8, CY - 6, CX + 8, CY + 6, 2.2, IC, 1);
+          MLine(CX - 8, CY + 6, CX + 8, CY - 6, 2.2, IC, 1);
+          MLine(CX + 8, CY - 6, CX + 3, CY - 6, 2.2, IC, 1);
+          MLine(CX + 8, CY + 6, CX + 3, CY + 6, 2.2, IC, 1);
+        end;
+      5:
+        begin
+          if RepeatSongList then IC := mcAccent else IC := mcMuted;
+          MStrokeRound(CX - 9, CY - 6, 18, 12, 5, 2, IC, 1);
+          Renderer.DrawTriangle(CX + 1, CY - 10, CX + 6, CY - 6, CX + 1, CY - 2, 0, IC.R, IC.G, IC.B, 1);
+        end;
+      6:
+        begin
+          if ShowLyrics then IC := mcAccent else IC := mcMuted;
+          MFillRect(CX - 9, CY - 7, 18, 2.5, IC, 1);
+          MFillRect(CX - 9, CY - 1, 18, 2.5, IC, 1);
+          MFillRect(CX - 9, CY + 5, 11, 2.5, IC, 1);
+        end;
+      7:
+        begin
+          MFillRect(CX - 9, CY - 7, 13, 2.5, mcText, 1);
+          MFillRect(CX - 9, CY - 1, 13, 2.5, mcText, 1);
+          MFillRect(CX - 9, CY + 5, 8, 2.5, mcText, 1);
+          MFillCircle(CX + 6, CY + 6, 3, mcText, 1);
+          MFillRect(CX + 8, CY - 6, 2, 12, mcText, 1);
+        end;
+      8:
+        begin
+          MFillRect(CX - 9, CY - 5, 18, 2, mcText, 1);
+          MFillCircle(CX - 3, CY - 4, 3.5, mcText, 1);
+          MFillRect(CX - 9, CY + 4, 18, 2, mcText, 1);
+          MFillCircle(CX + 4, CY + 5, 3.5, mcText, 1);
+        end;
+    end;
+    CX := CX + 52;
+  end;
+end;
+
+procedure TScreenJukebox.DrawModernPanel;
+var
+  PX, X, Y, W, TW, CurT: single;
+  I, Idx, N, SongID, Sel: integer;
+  R: TMRect;
+  RowBg: TMColor;
+  Playing, IsSel: boolean;
+  Lbl, S: UTF8String;
+  Labels: array[0..2] of UTF8String;
+begin
+  // video stays visible, dimmed
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 0.45);
+
+  { small now-playing pill, bottom left }
+  S := CurrentSong.Artist + '  -  ' + JTime(LyricsState.GetCurrentTime()) + ' / ' + JTime(LyricsState.TotalTime);
+  W := MTextW(CurrentSong.Title, 16, true);
+  TW := MTextW(S, 13, false);
+  if (TW > W) then
+    W := TW;
+  W := W + 90;
+  if (W > MUI_W - JB_PANEL_W - 2 * JB_PAD) then
+    W := MUI_W - JB_PANEL_W - 2 * JB_PAD;
+  X := JB_PAD;
+  Y := MUI_H - 28 - 60;
+  MFillRound(X, Y, W, 60, 30, mcSurface, 1);
+  MStrokeRound(X, Y, W, 60, 30, 1, mcBorder, 1);
+  JCover(Statics[StaticCover].Texture, X + 10, Y + 10, 40, 20, mcSurface);
+  MText(X + 62, Y + 11, CurrentSong.Title, 16, true, mcText, 1, mtaLeft, W - 80);
+  MText(X + 62, Y + 33, S, 13, false, mcMuted, 1, mtaLeft, W - 80);
+
+  { panel }
+  PX := MUI_W - JB_PANEL_W;
+  MFillRect(PX, 0, JB_PANEL_W, MUI_H, mcBg, 1);
+  MFillRect(PX, 0, 1, MUI_H, mcBorder, 1);
+
+  MText(PX + 28, 30, 'Up next', 26, true, mcText, 1);
+  N := Length(JukeboxVisibleSongs);
+  if (N > 0) then
+    Lbl := IntToStr(ActualInteraction + 1) + ' of ' + IntToStr(N)
+  else
+    Lbl := 'No songs';
+  MText(PX + JB_PANEL_W - 28, 40, Lbl, 14, false, mcMuted, 1, mtaRight);
+
+  // search
+  FSearchRect := MRect(PX + 28, 80, JB_PANEL_W - 56, 46);
+  R := FSearchRect;
+  MFillRound(R.X, R.Y, R.W, R.H, 23, mcSurface, 1);
+  if FindSongList then
+    MStrokeRound(R.X, R.Y, R.W, R.H, 23, 2, mcAccent, 1)
+  else
+    MStrokeRound(R.X, R.Y, R.W, R.H, 23, 1, mcBorder, 1);
+  MIconSearch(R.X + 26, R.Y + 23, 16, mcMuted, 1);
+  if (Filter = '') and not FindSongList then
+    MText(R.X + 48, R.Y + 14, 'Find a song in this list  (J)', 15, false, mcMuted, 1, mtaLeft, R.W - 64)
+  else
+  begin
+    MText(R.X + 48, R.Y + 13, Filter, 16, false, mcText, 1, mtaLeft, R.W - 64);
+    if FindSongList and ((SDL_GetTicks() div 500) mod 2 = 0) then
+    begin
+      TW := MTextW(Filter, 16, false);
+      if (TW > R.W - 64) then
+        TW := R.W - 64;
+      MFillRect(R.X + 50 + TW, R.Y + 12, 2, 22, mcAccent, 1);
+    end;
+  end;
+
+  // sort chips
+  Labels[0] := 'Artist';
+  Labels[1] := 'Title';
+  Labels[2] := 'Shuffle';
+  if RandomMode then
+    Sel := 2
+  else if OrderMode and (OrderType = 1) then
+    Sel := 0
+  else if OrderMode and (OrderType = 2) then
+    Sel := 1
+  else
+    Sel := -1;
+  X := PX + 28;
+  for I := 0 to 2 do
+  begin
+    W := MTextW(Labels[I], 14, I = Sel) + 32;
+    FChipRects[I] := MRect(X, 140, W, 36);
+    if (I = Sel) then
+    begin
+      MFillRound(X, 140, W, 36, 18, mcText, 1);
+      MText(X + 16, 150, Labels[I], 14, true, mcBg, 1);
+    end
+    else
+    begin
+      MFillRound(X, 140, W, 36, 18, mcSurface, 1);
+      MStrokeRound(X, 140, W, 36, 18, 1, mcBorder, 1);
+      MText(X + 16, 150, Labels[I], 14, false, mcMuted, 1);
+    end;
+    X := X + W + 8;
+  end;
+
+  // song rows
+  if (ActualInteraction < FPanelTop) then
+    FPanelTop := ActualInteraction;
+  if (ActualInteraction >= FPanelTop + JB_ROWS) then
+    FPanelTop := ActualInteraction - JB_ROWS + 1;
+  if (FPanelTop > N - JB_ROWS) then
+    FPanelTop := N - JB_ROWS;
+  if (FPanelTop < 0) then
+    FPanelTop := 0;
+
+  SetLength(FPanelRows, 0);
+  SetLength(FPanelRowIdx, 0);
+  if (N = 0) then
+    MText(PX + JB_PANEL_W / 2, 300, 'No songs match', 16, false, mcMuted, 1, mtaCenter);
+
+  Y := 192;
+  for I := 0 to JB_ROWS - 1 do
+  begin
+    Idx := FPanelTop + I;
+    if (Idx >= N) then
+      Break;
+    SongID := JukeboxVisibleSongs[Idx];
+    Playing := (SongID = CurrentSongID);
+    IsSel := (Idx = ActualInteraction);
+    R := MRect(PX + 18, Y, JB_PANEL_W - 36, JB_ROW_H);
+
+    SetLength(FPanelRows, Length(FPanelRows) + 1);
+    SetLength(FPanelRowIdx, Length(FPanelRowIdx) + 1);
+    FPanelRows[High(FPanelRows)] := R;
+    FPanelRowIdx[High(FPanelRowIdx)] := Idx;
+
+    if IsSel then
+      RowBg := mcSurface2
+    else if Playing then
+      RowBg := mcSurface
+    else
+      RowBg := mcBg;
+    if IsSel or Playing then
+      MFillRound(R.X, R.Y, R.W, R.H, 14, RowBg, 1);
+    if IsSel then
+      MStrokeRound(R.X, R.Y, R.W, R.H, 14, 2, mcText, 1);
+
+    JCover(JSongCover(SongID), R.X + 10, R.Y + 7, 42, 10, RowBg);
+    if Playing then
+    begin
+      // little level meter over the cover
+      MFillRect(R.X + 10, R.Y + 7, 42, 42, mcBg, 0.55);
+      MFillRect(R.X + 21, R.Y + 25, 4, 14, mcAccent, 1);
+      MFillRect(R.X + 29, R.Y + 18, 4, 21, mcAccent, 1);
+      MFillRect(R.X + 37, R.Y + 28, 4, 11, mcAccent, 1);
+    end;
+
+    if Playing then
+      MText(R.X + 66, R.Y + 9, CatSongs.Song[SongID].Title, 15, true, mcAccent, 1, mtaLeft, R.W - 80)
+    else
+      MText(R.X + 66, R.Y + 9, CatSongs.Song[SongID].Title, 15, true, mcText, 1, mtaLeft, R.W - 80);
+    MText(R.X + 66, R.Y + 30, CatSongs.Song[SongID].Artist, 13, false, mcMuted, 1, mtaLeft, R.W - 80);
+
+    Y := Y + JB_ROW_H + 4;
+  end;
+
+  // footer
+  X := PX + 28;
+  X := X + MKeyHint(X, 686, 'Enter', 'play') + 16;
+  X := X + MKeyHint(X, 686, 'Del', 'remove') + 16;
+  MKeyHint(X, 686, 'Esc', 'close');
+end;
+
+procedure TScreenJukebox.DrawModernDisplay;
+var
+  C: TMRect;
+  X, Y, W, RX, BW, TW, SX: single;
+  J, Row, Cur: integer;
+  Labels: array[0..3] of UTF8String;
+  Cols: array[0..4] of cardinal;
+  Sung, Todo, Nxt: TMColor;
+  S1, S2: UTF8String;
+
+  // segmented control, right-aligned in the card; each segment is clickable
+  procedure Segments(SegRow, Count, Selected: integer; SegY: single);
+  var
+    K: integer;
+    SW, SXX, Total: single;
+  begin
+    Total := 8;
+    for K := 0 to Count - 1 do
+      Total := Total + MTextW(Labels[K], 15, K = Selected) + 40;
+    SXX := C.X + C.W - 34 - Total;
+    MFillRound(SXX, SegY, Total, 46, 23, mcBg, 1);
+    if (FDisplayRow = SegRow) then
+      MStrokeRound(SXX - 5, SegY - 5, Total + 10, 56, 28, 3, mcText, 1);
+    SXX := SXX + 4;
+    for K := 0 to Count - 1 do
+    begin
+      SW := MTextW(Labels[K], 15, K = Selected) + 40;
+      if (K = Selected) then
+      begin
+        MFillRound(SXX, SegY + 4, SW, 38, 19, mcText, 1);
+        MText(SXX + 20, SegY + 14, Labels[K], 15, true, mcBg, 1);
+      end
+      else
+        MText(SXX + 20, SegY + 14, Labels[K], 15, false, mcMuted, 1);
+      AddDispRect(MRect(SXX, SegY + 4, SW, 38), SegRow * 100 + K);
+      SXX := SXX + SW;
+    end;
+  end;
+
+begin
+  SetLength(FDispRects, 0);
+  SetLength(FDispCodes, 0);
+
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 0.6);
+  C := MRect((MUI_W - 700) / 2, 60, 700, 600);
+  FDisplayCard := C;
+  MFillRound(C.X, C.Y, C.W, C.H, 28, mcSurface, 1);
+  MStrokeRound(C.X, C.Y, C.W, C.H, 28, 1, mcBorder, 1);
+
+  MText(C.X + 34, C.Y + 30, 'Display', 26, true, mcText, 1);
+  // close
+  MFillCircle(C.X + C.W - 54, C.Y + 46, 20, mcSurface2, 1);
+  MLine(C.X + C.W - 61, C.Y + 39, C.X + C.W - 47, C.Y + 53, 2.2, mcText, 1);
+  MLine(C.X + C.W - 47, C.Y + 39, C.X + C.W - 61, C.Y + 53, 2.2, mcText, 1);
+  AddDispRect(MRect(C.X + C.W - 74, C.Y + 26, 40, 40), 700);
+
+  { video fit }
+  Y := C.Y + 92;
+  MText(C.X + 34, Y + 14, 'Video', 17, false, mcText, 1);
+  Labels[0] := 'Fill';
+  Labels[1] := 'Fit';
+  Labels[2] := 'Halfway';
+  Segments(0, 3, JukeboxFit, Y);
+
+  { lyrics position }
+  Y := Y + 62;
+  MText(C.X + 34, Y + 14, 'Lyrics', 17, false, mcText, 1);
+  Labels[0] := 'Off';
+  Labels[1] := 'Bottom';
+  Labels[2] := 'Middle';
+  Labels[3] := 'Top';
+  if ShowLyrics then
+    Cur := JukeboxLyricPos
+  else
+    Cur := 0;
+  Segments(1, 4, Cur, Y);
+
+  { shade }
+  Y := Y + 62;
+  MText(C.X + 34, Y + 14, 'Shade behind lyrics', 17, false, mcText, 1);
+  W := 300;
+  RX := C.X + C.W - 34 - W;
+  MFillRound(RX, Y + 20, W, 6, 3, mcBorder, 1);
+  if (JukeboxShade > 0) then
+    MFillRound(RX, Y + 20, W * JukeboxShade / 10, 6, 3, mcAccent, 1);
+  MFillCircle(RX + W * JukeboxShade / 10, Y + 23, 10, mcText, 1);
+  if (FDisplayRow = 2) then
+    MStrokeRound(RX - 18, Y + 3, W + 36, 40, 20, 3, mcText, 1);
+  AddDispRect(MRect(RX - 10, Y + 3, W + 20, 40), 200);
+
+  { colours }
+  Y := Y + 62;
+  MText(C.X + 34, Y, 'Lyric colours', 17, false, mcText, 1);
+  Y := Y + 30;
+  BW := (C.W - 68 - 2 * 14) / 3;
+  for Row := 3 to 5 do
+  begin
+    X := C.X + 34 + (Row - 3) * (BW + 14);
+    MFillRound(X, Y, BW, 84, 18, mcBg, 1);
+    if (FDisplayRow = Row) then
+      MStrokeRound(X - 4, Y - 4, BW + 8, 92, 21, 3, mcText, 1);
+    case Row of
+      3: begin S1 := 'Sung'; Cur := JukeboxColSung; for J := 0 to 4 do Cols[J] := JSungCols[J]; end;
+      4: begin S1 := 'Still to sing'; Cur := JukeboxColTodo; for J := 0 to 4 do Cols[J] := JTodoCols[J]; end;
+    else
+      begin S1 := 'Next line'; Cur := JukeboxColNext; for J := 0 to 4 do Cols[J] := JNextCols[J]; end;
+    end;
+    MText(X + 16, Y + 14, S1, 13, false, mcMuted, 1);
+    for J := 0 to 4 do
+    begin
+      SX := X + 16 + J * 34;
+      if (J = Cur) then
+      begin
+        MFillCircle(SX + 13, Y + 55, 16, mcText, 1);
+        MFillCircle(SX + 13, Y + 55, 13.5, mcBg, 1);
+      end;
+      MFillCircle(SX + 13, Y + 55, 11, MColor(Cols[J]), 1);
+      AddDispRect(MRect(SX, Y + 40, 30, 30), Row * 100 + J);
+    end;
+  end;
+
+  { preview }
+  Y := Y + 84 + 20;
+  MFillRound(C.X + 34, Y, C.W - 68, 84, 18, mcBg, 1);
+  Sung := MColor(JSungCols[JukeboxColSung]);
+  Todo := MColor(JTodoCols[JukeboxColTodo]);
+  Nxt := MColor(JNextCols[JukeboxColNext]);
+  S1 := 'This is how ';
+  S2 := 'the lyrics will look';
+  TW := MTextW(S1 + S2, 26, true);
+  X := C.X + C.W / 2 - TW / 2;
+  MText(X, Y + 14, S1, 26, true, Sung, 1);
+  MText(X + MTextW(S1, 26, true), Y + 14, S2, 26, true, Todo, 1);
+  MText(C.X + C.W / 2, Y + 52, 'with the next line underneath', 17, false, Nxt, 1, mtaCenter);
+
+  { buttons }
+  Y := C.Y + C.H - 30 - 50;
+  S1 := 'Save for every song';
+  BW := MTextW(S1, 16, true) + 56;
+  X := C.X + C.W - 34 - BW;
+  MFillRound(X, Y, BW, 50, 25, mcAccent, 1);
+  MText(X + 28, Y + 15, S1, 16, true, mcOnAccent, 1);
+  AddDispRect(MRect(X, Y, BW, 50), 601);
+  if (FDisplayRow = 6) and (FDisplayBtn = 1) then
+    MStrokeRound(X - 5, Y - 5, BW + 10, 60, 30, 3, mcText, 1);
+
+  W := MTextW('Reset', 16, false) + 48;
+  X := X - 12 - W;
+  MFillRound(X, Y, W, 50, 25, mcSurface2, 1);
+  MText(X + 24, Y + 15, 'Reset', 16, false, mcText, 1);
+  AddDispRect(MRect(X, Y, W, 50), 600);
+  if (FDisplayRow = 6) and (FDisplayBtn = 0) then
+    MStrokeRound(X - 5, Y - 5, W + 10, 60, 30, 3, mcText, 1);
+
+  if (FDisplaySaved > 0) and (SDL_GetTicks() - FDisplaySaved < 2000) then
+    MText(C.X + 34, Y + 15, 'Saved', 16, true, mcAccent, 1);
+end;
+
+procedure TScreenJukebox.DrawModern;
+var
+  Shown: boolean;
+begin
+  if (CurrentSong = nil) then
+    Exit;
+  Shown := BarShown and not SongListVisible and not FDisplayVisible;
+  SongMenuVisible := Shown;
+
+  MBegin;
+  DrawModernLyrics;
+  if Shown then
+    DrawModernBar;
+  if SongListVisible then
+    DrawModernPanel;
+  if FDisplayVisible then
+    DrawModernDisplay;
+  MEnd;
 end;
 
 end.
