@@ -217,7 +217,8 @@ uses
   UWebSDK,
   Classes,
   Math,
-  UModernSing;
+  UModernSing,
+  URemoteQueue;
 
 const
   MAX_MESSAGE = 3;
@@ -731,6 +732,9 @@ begin
     CatSongs.Selected := PlaylistMedley.Song[PlaylistMedley.CurrentMedleySong-1];
 
   CurrentSong := CatSongs.Song[CatSongs.Selected];
+
+  // ui-v2: let the phone queue page know what's on
+  RemoteNowPlaying(CurrentSong, 0, 0);
 
   {for I := 0 to High(screenSingViewRef.StaticDuet) do
     Statics[screenSingViewRef.StaticDuet[I]].Visible := CurrentSong.isDuet and (PlayersPlay > 1);}
@@ -1607,6 +1611,7 @@ var
 
 begin
   Log.LogStatus('TScreenSingController.Finish', 'TScreenSingController.Finish');
+  RemoteNowPlaying(nil, 0, 0);
   AudioInput.CaptureStop;
   AudioPlayback.Stop;
   AudioPlayback.SetSyncSource(nil);

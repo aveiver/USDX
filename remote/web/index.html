@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D0E12">
+<title>Karaoke queue</title>
+<style>
+@font-face { font-family: 'USHelvetica'; src: url('/fonts/Helvetica.ttf') format('truetype'); font-weight: 400 500; font-display: swap; }
+@font-face { font-family: 'USHelvetica'; src: url('/fonts/Helvetica-Bold.ttf') format('truetype'); font-weight: 600 800; font-display: swap; }
+:root {
+  --bg: #0D0E12; --surface: #181A21; --surface2: #1F222B; --border: #2A2D36;
+  --text: #F2F3F5; --muted: #A9ADB8; --accent: #FF3EB5; --on-accent: #0D0E12;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font-family: 'USHelvetica', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 0 16px calc(96px + env(safe-area-inset-bottom)); }
+
+/* now playing + queue dropdown */
+.top { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 12px 0 10px; }
+.now { background: var(--surface); border: 1px solid var(--border); border-radius: 22px; overflow: hidden; }
+.now-main { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 10px; width: 100%; background: none; border: 0; text-align: left; }
+.now-cover { width: 52px; height: 52px; border-radius: 12px; flex-shrink: 0; background: var(--surface2) center/cover no-repeat; display: grid; place-items: center; }
+.now-text { flex: 1; min-width: 0; }
+.label { font-size: 12px; color: var(--accent); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.now-title { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.now-artist { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.next-btn { display: flex; align-items: center; gap: 6px; background: var(--surface2); border-radius: 999px; padding: 8px 12px; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+.next-btn .count { background: var(--accent); color: var(--on-accent); border-radius: 999px; min-width: 22px; height: 22px; display: grid; place-items: center; font-size: 13px; padding: 0 6px; }
+.chev { transition: transform .2s; }
+.open .chev { transform: rotate(180deg); }
+.progress { height: 4px; background: var(--border); }
+.progress > div { height: 4px; background: var(--accent); width: 0; transition: width 1s linear; }
+.queue { display: none; border-top: 1px solid var(--border); max-height: 55vh; overflow-y: auto; }
+.open .queue { display: block; }
+.qrow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.qrow:last-child { border-bottom: 0; }
+.qnum { width: 22px; text-align: center; color: var(--muted); font-size: 14px; flex-shrink: 0; }
+.qtext { flex: 1; min-width: 0; }
+.qtitle { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qartist { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mine { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 2px; }
+.icon-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--surface2); border: 0; display: grid; place-items: center; flex-shrink: 0; }
+.empty { padding: 16px; color: var(--muted); font-size: 14px; text-align: center; }
+
+/* search + list */
+.search { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0 16px; height: 48px; }
+.search:focus-within { border-color: var(--accent); }
+.search input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--text); font: inherit; font-size: 16px; }
+.search input::placeholder { color: var(--muted); }
+.list { margin-top: 6px; }
+.letter { position: sticky; top: var(--top-h, 140px); background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 700; padding: 10px 4px 4px; z-index: 1; }
+.song { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 4px; background: none; border: 0; text-align: left; border-radius: 14px; }
+.song:active { background: var(--surface); }
+.cover { width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0; background: var(--surface2); object-fit: cover; }
+.ph { display: grid; place-items: center; }
+.stext { flex: 1; min-width: 0; }
+.stitle { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sartist { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.add { width: 40px; height: 40px; border-radius: 50%; background: var(--surface2); display: grid; place-items: center; flex-shrink: 0; }
+.song.queued .add { background: var(--accent); }
+.more { height: 1px; }
+.foot { text-align: center; color: var(--muted); font-size: 13px; padding: 24px 0 8px; }
+.foot button { background: none; border: 0; color: var(--muted); text-decoration: underline; padding: 8px; }
+.host-badge { color: var(--accent); font-weight: 700; }
+
+/* toast + dialog */
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translate(-50%, 140%); background: var(--text); color: var(--bg); font-weight: 700; border-radius: 999px; padding: 14px 22px; font-size: 15px; transition: transform .25s; z-index: 20; max-width: calc(100% - 32px); text-align: center; }
+.toast.show { transform: translate(-50%, 0); }
+.toast.err { background: #FF6B6B; color: #0D0E12; }
+dialog { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 24px; padding: 24px; width: min(360px, calc(100% - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h2 { margin: 0 0 6px; font-size: 22px; }
+dialog p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 22px; letter-spacing: .3em; text-align: center; }
+.row { display: flex; gap: 10px; margin-top: 16px; }
+.btn { flex: 1; height: 48px; border-radius: 999px; border: 0; font-weight: 700; font-size: 16px; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.ghost { background: var(--surface2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top" id="top">
+    <div class="now" id="now">
+      <button class="now-main" id="nowToggle" aria-expanded="false" aria-controls="queue">
+        <span class="now-cover" id="nowCover">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A9ADB8" stroke-width="2" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </span>
+        <span class="now-text">
+          <span class="label" id="nowLabel">Now singing</span>
+          <div class="now-title" id="nowTitle">Nothing playing right now</div>
+          <div class="now-artist" id="nowArtist">Pick a song below to start the queue</div>
+        </span>
+        <span class="next-btn"><span>Up next</span><span class="count" id="qCount">0</span>
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F2F3F5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </span>
+      </button>
+      <div class="progress"><div id="nowBar"></div></div>
+      <div class="queue" id="queue"></div>
+    </div>
+    <label class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A9ADB8" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Search songs or artists" autocomplete="off" aria-label="Search songs or artists">
+    </label>
+  </div>
+
+  <div class="list" id="list"></div>
+  <div class="more" id="more"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="hostDlg">
+  <form method="dialog" id="hostForm">
+    <h2>Host controls</h2>
+    <p>Enter the PIN to remove or reorder anyone's songs.</p>
+    <input id="pin" inputmode="numeric" autocomplete="off" maxlength="8" aria-label="PIN">
+    <div class="row">
+      <button class="btn ghost" value="cancel" type="button" id="hostCancel">Cancel</button>
+      <button class="btn primary" type="submit">Unlock</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  var songs = [], filtered = [], shown = 0, PAGE = 60;
+  var state = { now: null, queue: [], host: false, songs: 0 };
+  var queuedIds = {};
+  var $ = function (id) { return document.getElementById(id); };
+  var NOTE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2A2D36" stroke-width="2" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+  var PLUS = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F2F3F5" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  var CHECK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0D0E12" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+  var X = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2F3F5" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  var UP = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2F3F5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+  var DOWN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2F3F5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function toast(msg, err) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (err ? ' err' : '');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(function () { t.className = 'toast' + (err ? ' err' : ''); }, 2600);
+  }
+
+  function api(method, url, body) {
+    return fetch(url, {
+      method: method, credentials: 'same-origin',
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) throw new Error(j.error || 'Something went wrong');
+        return j;
+      });
+    });
+  }
+
+  function fold(s) {
+    return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+
+  function letterOf(s) {
+    var c = fold(s).charAt(0).toUpperCase();
+    return c >= 'A' && c <= 'Z' ? c : '#';
+  }
+
+  /* ---- song list ---- */
+  function applyFilter() {
+    var q = fold($('q').value.trim());
+    if (!q) filtered = songs;
+    else {
+      var words = q.split(/\s+/);
+      filtered = songs.filter(function (s) {
+        return words.every(function (w) { return s._f.indexOf(w) >= 0; });
+      });
+    }
+    shown = 0;
+    $('list').innerHTML = '';
+    renderMore();
+    $('foot').firstChild && updateFoot();
+  }
+
+  function songRow(s) {
+    var b = el('button', 'song' + (queuedIds[s.id] ? ' queued' : ''));
+    b.dataset.id = s.id;
+    var cov;
+    if (s.cover) {
+      cov = el('img', 'cover');
+      cov.loading = 'lazy';
+      cov.alt = '';
+      cov.src = '/api/cover/' + s.id;
+      cov.onerror = function () { var p = el('span', 'cover ph'); p.innerHTML = NOTE; cov.replaceWith(p); };
+    } else {
+      cov = el('span', 'cover ph');
+      cov.innerHTML = NOTE;
+    }
+    var t = el('span', 'stext');
+    t.appendChild(el('div', 'stitle', s.title));
+    t.appendChild(el('div', 'sartist', s.artist + (s.duet ? '  ·  Duet' : '') + (s.year ? '  ·  ' + s.year : '')));
+    var a = el('span', 'add');
+    a.innerHTML = queuedIds[s.id] ? CHECK : PLUS;
+    b.setAttribute('aria-label', 'Queue ' + s.title + ' by ' + s.artist);
+    b.append(cov, t, a);
+    b.onclick = function () { addSong(s, b); };
+    return b;
+  }
+
+  function renderMore() {
+    var list = $('list');
+    var end = Math.min(filtered.length, shown + PAGE);
+    var prev = shown > 0 ? letterOf(filtered[shown - 1].artist) : null;
+    var frag = document.createDocumentFragment();
+    var searching = $('q').value.trim() !== '';
+    for (var i = shown; i < end; i++) {
+      var s = filtered[i];
+      var L = letterOf(s.artist);
+      if (!searching && L !== prev) { frag.appendChild(el('div', 'letter', L)); prev = L; }
+      frag.appendChild(songRow(s));
+    }
+    list.appendChild(frag);
+    shown = end;
+    if (shown === 0) list.appendChild(el('div', 'empty', songs.length ? 'No songs match' : 'Loading songs…'));
+  }
+
+  new IntersectionObserver(function (e) {
+    if (e[0].isIntersecting && shown < filtered.length) renderMore();
+  }, { rootMargin: '600px' }).observe($('more'));
+
+  function loadSongs() {
+    return api('GET', '/api/songs').then(function (j) {
+      songs = j.songs.map(function (s) { s._f = fold(s.title + ' ' + s.artist); return s; });
+      applyFilter();
+    });
+  }
+
+  function addSong(s, row) {
+    if (queuedIds[s.id]) { toast('Already in the queue'); return; }
+    api('POST', '/api/queue', { id: s.id }).then(function (j) {
+      toast(j.position === 1 && !state.now ? 'Added - it\'s up next!' : 'Added - number ' + j.position + ' in the queue');
+      refresh();
+    }).catch(function (e) { toast(e.message, true); });
+  }
+
+  /* ---- now playing + queue ---- */
+  function fmt(t) {
+    t = Math.max(0, Math.round(t));
+    return Math.floor(t / 60) + ':' + ('0' + (t % 60)).slice(-2);
+  }
+
+  function renderNow() {
+    var n = state.now;
+    var cov = $('nowCover');
+    if (n) {
+      $('nowLabel').textContent = 'Now singing';
+      $('nowTitle').textContent = n.title;
+      $('nowArtist').textContent = n.artist + (n.duration ? '  ·  ' + fmt(n.duration - n.elapsed) + ' left' : '');
+      $('nowBar').style.width = n.duration ? Math.min(100, 100 * n.elapsed / n.duration) + '%' : '0';
+      var src = n.id ? '/api/cover/' + n.id : '';
+      if (cov.dataset.src !== src) {
+        cov.dataset.src = src;
+        cov.style.backgroundImage = src ? 'url(' + src + ')' : '';
+        cov.firstElementChild && (cov.firstElementChild.style.display = src ? 'none' : '');
+      }
+    } else {
+      $('nowLabel').textContent = state.queue.length ? 'Up next' : 'Karaoke';
+      $('nowTitle').textContent = state.queue.length ? state.queue[0].title : 'Nothing playing right now';
+      $('nowArtist').textContent = state.queue.length ? state.queue[0].artist : 'Pick a song below to start the queue';
+      $('nowBar').style.width = '0';
+      cov.dataset.src = '';
+      cov.style.backgroundImage = '';
+      cov.firstElementChild && (cov.firstElementChild.style.display = '');
+    }
+    $('qCount').textContent = state.queue.length;
+  }
+
+  function renderQueue() {
+    var q = $('queue');
+    q.innerHTML = '';
+    if (!state.queue.length) {
+      q.appendChild(el('div', 'empty', 'The queue is empty. Add a song below!'));
+      return;
+    }
+    state.queue.forEach(function (item, i) {
+      var r = el('div', 'qrow');
+      r.appendChild(el('span', 'qnum', String(i + 1)));
+      var t = el('span', 'qtext');
+      var title = el('div', 'qtitle', item.title);
+      if (item.mine) title.appendChild(el('span', 'mine', 'yours'));
+      t.appendChild(title);
+      t.appendChild(el('div', 'qartist', item.artist));
+      r.appendChild(t);
+      if (state.host) {
+        if (i > 0) r.appendChild(iconBtn(UP, 'Move up', function () { move(item, -1); }));
+        if (i < state.queue.length - 1) r.appendChild(iconBtn(DOWN, 'Move down', function () { move(item, 1); }));
+      }
+      if (state.host || item.mine) r.appendChild(iconBtn(X, 'Remove', function () { removeItem(item); }));
+      q.appendChild(r);
+    });
+  }
+
+  function iconBtn(svg, label, fn) {
+    var b = el('button', 'icon-btn');
+    b.innerHTML = svg;
+    b.setAttribute('aria-label', label);
+    b.onclick = function (e) { e.stopPropagation(); fn(); };
+    return b;
+  }
+
+  function removeItem(item) {
+    api('POST', '/api/remove', { qid: item.qid }).then(function () { toast('Removed'); refresh(); })
+      .catch(function (e) { toast(e.message, true); });
+  }
+
+  function move(item, delta) {
+    api('POST', '/api/move', { qid: item.qid, delta: delta }).then(refresh)
+      .catch(function (e) { toast(e.message, true); });
+  }
+
+  function syncQueuedMarks() {
+    var ids = {};
+    state.queue.forEach(function (q) { ids[q.id] = true; });
+    var changed = Object.keys(ids).join() !== Object.keys(queuedIds).join();
+    queuedIds = ids;
+    if (changed) {
+      document.querySelectorAll('.song').forEach(function (b) {
+        var on = !!ids[b.dataset.id];
+        b.classList.toggle('queued', on);
+        b.lastChild.innerHTML = on ? CHECK : PLUS;
+      });
+    }
+  }
+
+  function updateFoot() {
+    var f = $('foot');
+    f.innerHTML = '';
+    f.appendChild(document.createTextNode(songs.length + ' songs  ·  '));
+    if (state.host) f.appendChild(el('span', 'host-badge', 'Host controls on'));
+    else {
+      var b = el('button', '', 'Host controls');
+      b.onclick = function () { $('pin').value = ''; $('hostDlg').showModal(); $('pin').focus(); };
+      f.appendChild(b);
+    }
+  }
+
+  function refresh() {
+    return api('GET', '/api/state').then(function (s) {
+      var reload = s.songs !== state.songs && state.songs !== 0;
+      state = s;
+      renderNow();
+      renderQueue();
+      syncQueuedMarks();
+      updateFoot();
+      if (reload || (!songs.length && s.songs)) loadSongs();
+    }).catch(function () {
+      $('nowLabel').textContent = 'Offline';
+      $('nowTitle').textContent = 'Can\'t reach the karaoke';
+      $('nowArtist').textContent = 'Check you\'re on the same Wi-Fi';
+    });
+  }
+
+  $('nowToggle').onclick = function () {
+    var open = $('now').classList.toggle('open');
+    $('nowToggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  var qt;
+  $('q').addEventListener('input', function () { clearTimeout(qt); qt = setTimeout(applyFilter, 120); });
+  $('hostCancel').onclick = function () { $('hostDlg').close(); };
+  $('hostForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    api('POST', '/api/host', { pin: $('pin').value }).then(function () {
+      $('hostDlg').close(); toast('Host controls on'); refresh();
+    }).catch(function (err) { toast(err.message, true); });
+  });
+
+  function measureTop() {
+    document.documentElement.style.setProperty('--top-h', $('top').offsetHeight + 'px');
+  }
+  new ResizeObserver(measureTop).observe($('top'));
+
+  loadSongs().then(refresh, refresh);
+  setInterval(function () { if (!document.hidden) refresh(); }, 3000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+})();
+</script>
+</body>
+</html>

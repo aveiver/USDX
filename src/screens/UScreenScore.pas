@@ -173,6 +173,10 @@ type
       StaticNavigate:       integer;
       TextNavigate:         integer;
 
+      // ui-v2 phone queue: countdown to the next queued song
+      FQueueTick:           cardinal;
+      FQueueOff:            boolean;
+
       procedure RefreshTexts;
       procedure ResetScores;
 
@@ -234,6 +238,7 @@ uses
   UPathUtils,
   UScreenPopup,
   UScreenSong,
+  URemoteQueue,
   USkins,
   USong,
   UTime,
@@ -381,6 +386,12 @@ begin
       SDLK_ESCAPE,
       SDLK_BACKSPACE:
         begin
+          // ui-v2: first Esc just stops the queued song starting by itself
+          if FinishScreenDraw and not FQueueOff and (FQueueTick <> 0) and RemoteCanStart then
+          begin
+            FQueueOff := true;
+            Exit;
+          end;
           if (FinishScreenDraw = true) then
           begin
             if (CurrentSong.isDuet) or (ScreenSong.RapToFreestyle) or (ScreenSong.Mode = smMedley) then
@@ -400,6 +411,12 @@ begin
 
       SDLK_RETURN:
         begin
+         // ui-v2: a song is waiting in the phone queue - start it now
+         if FinishScreenDraw and not FQueueOff and RemoteCanStart then
+         begin
+           RemoteStartNext;
+           Exit;
+         end;
          if (Interaction <> -1) then
             ScreenPopupSendScore.ShowPopup(Language.Translate('SCORE_SEND_DESC'), @OnSendScore, nil)
          else
@@ -1147,6 +1164,8 @@ begin
 
   FinishScreenDraw := false;
   PreviewEnd := 0;
+  FQueueTick := 0;
+  FQueueOff := false;
 
   {**
    * Turn backgroundmusic on
@@ -1874,6 +1893,7 @@ end;
 
 const
   SC_PAD = 56;
+  SCORE_QUEUE_S = 12; // phone queue: seconds on the results before the next song starts
 
 // count the numbers up in the same order as the old bars
 procedure TScreenScore.UpdateCounters;
@@ -1916,6 +1936,7 @@ var
   PC, Gold, LineCol: TMColor;
   Done: boolean;
   Title, Sub: UTF8String;
+  Secs: single;
 begin
   N := PlayersPlay;
   if (N < 1) then
@@ -2037,12 +2058,45 @@ begin
     MText(R.X + R.W - 24, R.Y + 356, IntToStr(Golden), 18, true, mcText, A3, mtaRight);
   end;
 
-  // footer
-  X := SC_PAD;
-  if Done then
-    MKeyHint(X, 682, 'Enter', 'continue')
+  // footer: countdown to the next song from the phone queue, or the key hint
+  RemotePoll;
+  if Done and not FQueueOff and RemoteCanStart then
+  begin
+    if (FQueueTick = 0) then
+      FQueueTick := SDL_GetTicks();
+    Secs := SCORE_QUEUE_S - (SDL_GetTicks() - FQueueTick) / 1000;
+    if (Secs <= 0) then
+      RemoteStartNext
+    else
+    begin
+      R := MRect(SC_PAD, 660, MUI_W - 2 * SC_PAD, 46);
+      MFillRound(R.X, R.Y, R.W, R.H, 23, mcSurface, 1);
+      MStrokeRound(R.X, R.Y, R.W, R.H, 23, 1.5, mcAccent, 1);
+      MText(R.X + 22, R.Y + 16, 'UP NEXT', 13, true, mcAccent, 1);
+      X := R.X + 22 + MTextW('UP NEXT', 13, true) + 14;
+      Title := RemoteQueueItem(0).Title + '  -  ' + RemoteQueueItem(0).Artist;
+      MText(X, R.Y + 13, Title, 18, true, mcText, 1, mtaLeft, R.W - 520);
+      Sub := 'Starting in ' + IntToStr(Trunc(Secs) + 1) + ' s';
+      X := R.X + R.W - 22;
+      X := X - MTextW('stay here', 15, false);
+      MText(X, R.Y + 15, 'stay here', 15, false, mcMuted, 1);
+      X := X - 10 - MTextW('Esc', 15, true) - 16;
+      MKeyHint(X, R.Y + 15, 'Esc', '');
+      X := X - 22 - MTextW('start now', 15, false);
+      MText(X, R.Y + 15, 'start now', 15, false, mcMuted, 1);
+      X := X - 10 - MTextW('Enter', 15, true) - 16;
+      MKeyHint(X, R.Y + 15, 'Enter', '');
+      MText(X - 22, R.Y + 15, Sub, 15, true, mcText, 1, mtaRight);
+    end;
+  end
   else
-    MKeyHint(X, 682, 'Enter', 'skip');
+  begin
+    X := SC_PAD;
+    if Done then
+      MKeyHint(X, 682, 'Enter', 'continue')
+    else
+      MKeyHint(X, 682, 'Enter', 'skip');
+  end;
 
   MEnd;
 end;

@@ -90,6 +90,7 @@ uses
   UNote,
   UParty,
   URenderer,
+  URemoteQueue,
   UScreenSingController,
   USong,
   UThemes;
@@ -700,12 +701,57 @@ begin
   MText(X + 22 + TW + 16 + AW + 16, Y + 15, TimeText, 16, false, mcMuted, 1);
 end;
 
+// "Up next" pill from the phone queue: Mode 0 = left-aligned at X,
+// 1 = right-aligned at X, 2 = centred on X
+procedure DrawUpNext(X, Y: single; Mode: integer);
+var
+  Item: TRemoteItem;
+  Count: integer;
+  S, More: UTF8String;
+  W, TW, MW: single;
+begin
+  RemotePoll;
+  Count := RemoteQueueCount;
+  if (Count = 0) then
+    Exit;
+  Item := RemoteQueueItem(0);
+  S := Item.Title + '  -  ' + Item.Artist;
+  if (Count > 1) then
+    More := '+' + IntToStr(Count - 1)
+  else
+    More := '';
+  TW := MTextW(S, 14, false);
+  if (TW > 420) then
+    TW := 420;
+  if (More <> '') then
+    MW := MTextW(More, 13, true) + 18
+  else
+    MW := 0;
+  W := 18 + MTextW('UP NEXT', 12, true) + 10 + TW + 16 + MW;
+  case Mode of
+    1: X := X - W;
+    2: X := X - W / 2;
+  end;
+  MFillRound(X, Y, W, 34, 17, mcSurface, 1);
+  MStrokeRound(X, Y, W, 34, 17, 1, mcBorder, 1);
+  MText(X + 18, Y + 10, 'UP NEXT', 12, true, mcAccent, 1);
+  MText(X + 18 + MTextW('UP NEXT', 12, true) + 10, Y + 9, S, 14, false, mcText, 1, mtaLeft, 420);
+  if (More <> '') then
+  begin
+    MFillRound(X + W - 8 - MW, Y + 6, MW, 22, 11, mcSurface2, 1);
+    MText(X + W - 8 - MW / 2, Y + 10, More, 13, true, mcText, 1, mtaCenter);
+  end;
+end;
+
 procedure ModernSingHud(CurTime, TotalTime: real; const TimeText: UTF8String);
 var
   N, I: integer;
   ShowScore, Scoring: boolean;
   ChipW, X: single;
 begin
+  // the phone queue page shows what's on and how far in
+  RemoteNowPlaying(CurrentSong, CurTime, TotalTime);
+
   MBegin;
 
   // song timeline with the lyric sections along the very top
@@ -720,12 +766,14 @@ begin
   begin
     // scoring off: just the song
     DrawSongChip(HUD_PAD, 38, false, TimeText);
+    DrawUpNext(HUD_PAD, 96, 0);
   end
   else if (N = 1) then
   begin
     DrawPlayerChip(HUD_PAD, 34, 220, 0, false, ShowScore);
     DrawPopup(HUD_PAD, 100, 0, false);
     DrawSongChip(MUI_W - HUD_PAD, 38, true, TimeText);
+    DrawUpNext(MUI_W - HUD_PAD, 96, 1);
   end
   else if (N = 2) then
   begin
@@ -733,7 +781,8 @@ begin
     DrawPlayerChip(MUI_W - HUD_PAD - 220, 34, 220, 1, true, ShowScore);
     DrawPopup(HUD_PAD, 100, 0, false);
     DrawPopup(MUI_W - HUD_PAD, 100, 1, true);
-    MText(MUI_W / 2, 52, CurrentSong.Title + '   ' + TimeText, 15, false, mcMuted, 1, mtaCenter, MUI_W - 560);
+    MText(MUI_W / 2, 44, CurrentSong.Title + '   ' + TimeText, 15, false, mcMuted, 1, mtaCenter, MUI_W - 560);
+    DrawUpNext(MUI_W / 2, 66, 2);
   end
   else
   begin

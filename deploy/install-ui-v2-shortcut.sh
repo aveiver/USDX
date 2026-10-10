@@ -32,6 +32,7 @@ FORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAME="ultrastar-karaoke-v2"
 DESKTOP_FILE="$FORK_DIR/deploy/$NAME.desktop"
 
+chmod +x "$FORK_DIR/deploy/launch-ui-v2.sh"
 if [ ! -x "$FORK_DIR/game/ultrastardx" ]; then
   echo "Note: $FORK_DIR/game/ultrastardx isn't built yet - run make first," \
        "the shortcut won't start anything until then."

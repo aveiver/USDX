@@ -71,6 +71,8 @@ type
       MSearchActive: boolean;          // typing into the header search box
       MSearchText:  UTF8String;
       MRailHas:     array[0..26] of boolean;  // letters that have artists
+      MQueueTick:   cardinal;          // last key/click; queued songs start after a quiet spell
+      MQueueRect:   TMRect;            // "up next" banner (click = start now)
 
       function ModernListRect: TMRect;
       function ModernRailRect: TMRect;
@@ -363,6 +365,7 @@ uses
   UNote,
   UParty,
   UPlaylist,
+  URemoteQueue,
   UScreenSongMenu,
   USkins,
   UUnicodeUtils,
@@ -713,6 +716,9 @@ var
   VS: integer;
 begin
   Result := true;
+
+  if PressedDown then
+    MQueueTick := SDL_GetTicks();
 
   VS := CatSongs.VisibleSongs;
 
@@ -2871,6 +2877,10 @@ var
 begin
   inherited;
 
+  // ui-v2: phone queue - publish the song list, restart the quiet timer
+  RemoteExportSongs;
+  MQueueTick := SDL_GetTicks();
+
   MListReady := false;
   MSearchActive := false;
   if (CatSongs.CatNumShow <> -2) then
@@ -4413,6 +4423,7 @@ const
   SB_BOTTOM  = 652;   // bottom of the list and the Sing button
   SB_PANEL_W = 360;   // width of the left panel (cover is square)
   SB_RAIL_W  = 22;    // A-Z jump rail beside the list
+  QUEUE_QUIET_S = 10; // phone queue: seconds without input before the next song starts
 
 function TScreenSong.ModernListRect: TMRect;
 var
@@ -4858,14 +4869,62 @@ begin
     end;
   end;
 
-  { ---------- footer: key hints ---------- }
-  HX := SB_PAD;
-  HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
-  HX := HX + MKeyHint(HX, 682, 'Enter', 'sing') + 22;
-  HX := HX + MKeyHint(HX, 682, 'Alt+A-Z', 'jump to artist') + 22;
-  if (VS > 0) and CatSongs.Song[Interaction].isDuet then
-    HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
-  MKeyHint(HX, 682, 'Esc', 'back');
+  { ---------- footer: phone queue banner, or key hints ---------- }
+  RemotePoll;
+  MQueueRect := MRect(0, 0, 0, 0);
+  if not MSearchActive and not ScreenSongMenu.Visible and not ScreenSongJumpto.Visible and
+     RemoteCanStart then
+  begin
+    // the next queued song starts after QUEUE_QUIET_S seconds without input
+    TW := QUEUE_QUIET_S - (SDL_GetTicks() - MQueueTick) / 1000;
+    if (TW <= 0) then
+      RemoteStartNext
+    else
+    begin
+      MQueueRect := MRect(SB_PAD, 660, MUI_W - 2 * SB_PAD, 46);
+      R := MQueueRect;
+      MFillRound(R.X, R.Y, R.W, R.H, 23, mcSurface, 1);
+      MStrokeRound(R.X, R.Y, R.W, R.H, 23, 1.5, mcAccent, 1);
+      MText(R.X + 22, R.Y + 16, 'UP NEXT', 13, true, mcAccent, 1);
+      HX := R.X + 22 + MTextW('UP NEXT', 13, true) + 14;
+      Lbl := RemoteQueueItem(0).Title + '  -  ' + RemoteQueueItem(0).Artist;
+      if (RemoteQueueCount > 1) then
+        Caption := '+' + IntToStr(RemoteQueueCount - 1) + ' more'
+      else
+        Caption := '';
+      MText(HX, R.Y + 13, Lbl, 18, true, mcText, 1, mtaLeft, R.W - 470);
+      if (Caption <> '') then
+        MText(HX + Min(MTextW(Lbl, 18, true), R.W - 470) + 16, R.Y + 15, Caption, 15, false, mcMuted, 1);
+      // start-now pill on the right
+      Title := 'Start now';
+      Best := 'Starting in ' + IntToStr(Ceil(TW)) + ' s';
+      SwX := MTextW(Title, 15, true) + 36;
+      MFillRound(R.X + R.W - 8 - SwX, R.Y + 7, SwX, 32, 16, mcAccent, 1);
+      MText(R.X + R.W - 8 - SwX / 2, R.Y + 14, Title, 15, true, mcOnAccent, 1, mtaCenter);
+      MText(R.X + R.W - 8 - SwX - 16, R.Y + 15, Best, 15, false, mcMuted, 1, mtaRight);
+    end;
+  end
+  else
+  begin
+    HX := SB_PAD;
+    HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
+    HX := HX + MKeyHint(HX, 682, 'Enter', 'sing') + 22;
+    HX := HX + MKeyHint(HX, 682, 'Alt+A-Z', 'jump to artist') + 22;
+    if (VS > 0) and CatSongs.Song[Interaction].isDuet then
+      HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
+    HX := HX + MKeyHint(HX, 682, 'Esc', 'back') + 22;
+
+    // where guests can queue songs from their phones
+    Lbl := RemoteURL;
+    if (Pos('://', Lbl) > 0) then
+      Lbl := Copy(Lbl, Pos('://', Lbl) + 3, Length(Lbl));
+    if (Lbl <> '') then
+    begin
+      Lbl := 'Queue from your phone: ' + Lbl;
+      if (HX + MTextW(Lbl, 15, false) < MUI_W - SB_PAD) then
+        MText(MUI_W - SB_PAD, 682, Lbl, 15, false, mcMuted, 1, mtaRight);
+    end;
+  end;
 
   MEnd;
 
@@ -4883,6 +4942,7 @@ begin
   Result := true;
   if not BtnDown then
     Exit;
+  MQueueTick := SDL_GetTicks();
 
   case MouseButton of
     SDL_BUTTON_RIGHT:
@@ -4894,6 +4954,13 @@ begin
     SDL_BUTTON_LEFT:
       begin
         MWindowToVirtual(X, Y, VX, VY);
+
+        // phone queue banner: start the next song now
+        if (MQueueRect.W > 0) and MHit(VX, VY, MQueueRect) then
+        begin
+          RemoteStartNext;
+          Exit;
+        end;
 
         if MSearchActive and not MHit(VX, VY, ModernHeaderRect(1)) then
           ModernSearchFocus(false);

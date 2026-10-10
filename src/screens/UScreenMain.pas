@@ -86,6 +86,7 @@ uses
   UMusic,
   UNote,
   UParty,
+  URemoteQueue,
   URenderer,
   UScreenSong,
   USong,
@@ -95,6 +96,60 @@ uses
 
 const
   PAD = 56;
+
+// phone queue: QR code + address, top right of the main menu
+procedure DrawQueueCard;
+var
+  N, X, Y, RunStart: integer;
+  CX, CY, CW, CH, QS, Cell: single;
+  Addr: UTF8String;
+begin
+  RemoteExportSongs;   // cheap unless the song list changed
+  RemotePoll;
+  N := RemoteQRSize;
+  Addr := RemoteURL;
+  if (N = 0) or (Addr = '') then
+    Exit;
+  if (Pos('://', Addr) > 0) then
+    Addr := Copy(Addr, Pos('://', Addr) + 3, Length(Addr));
+
+  CW := 460;
+  CH := 196;
+  CX := MUI_W - PAD - CW;
+  CY := 108;
+  MFillRound(CX, CY, CW, CH, 24, mcSurface, 1);
+  MStrokeRound(CX, CY, CW, CH, 24, 1, mcBorder, 1);
+
+  // the code on white with a quiet zone of 2 modules
+  QS := CH - 24;
+  MFillRound(CX + 12, CY + 12, QS, QS, 14, MColor($FFFFFF), 1);
+  Cell := QS / (N + 4);
+  for Y := 0 to N - 1 do
+  begin
+    X := 0;
+    while (X < N) do
+    begin
+      if RemoteQRDark(X, Y) then
+      begin
+        RunStart := X;
+        while (X < N) and RemoteQRDark(X, Y) do
+          Inc(X);
+        MFillRect(CX + 12 + (RunStart + 2) * Cell, CY + 12 + (Y + 2) * Cell,
+                  (X - RunStart) * Cell + 0.5, Cell + 0.5, MColor($000000), 1);
+      end
+      else
+        Inc(X);
+    end;
+  end;
+
+  X := Round(CX + 12 + QS + 22);
+  MText(X, CY + 30, 'Queue songs', 24, true, mcText, 1);
+  MText(X, CY + 60, 'from your phone', 24, true, mcText, 1);
+  MText(X, CY + 104, 'Scan with your camera, or open', 14, false, mcMuted, 1);
+  MText(X, CY + 126, Addr, 18, true, mcAccent, 1, mtaLeft, CX + CW - X - 16);
+  if (RemoteQueueCount > 0) then
+    MText(X, CY + 160, IntToStr(RemoteQueueCount) + ' in the queue', 14, false, mcMuted, 1);
+end;
 
 constructor TScreenMain.Create;
 begin
@@ -365,6 +420,8 @@ begin
   MText(PAD, 128, IntToStr(Songs.SongList.Count) + ' songs ready', 19, false, mcMuted, 1);
   MText(PAD, 160, 'Pick a song.', 72, true, mcText, 1);
   MText(PAD, 236, 'Grab a mic.', 72, true, mcText, 1);
+
+  DrawQueueCard;
 
   // cards
   DrawCard(ItemRect(MAIN_SING), Language.Translate('SING_SING'),
