@@ -180,6 +180,8 @@ type
       FUpNextOnly:          boolean;
       FUpNextStarted:       boolean;   // already moving on (don't act twice while fading)
       FUpNextIdx:           integer;
+      FUpNextTex:           TTexture;  // cover of the next song, loaded from its file
+      FUpNextTexIdx:        integer;
 
       procedure RefreshTexts;
       procedure ResetScores;
@@ -1188,6 +1190,7 @@ begin
   FUpNextOnly := Boolean(Ini.KaraokeMode) and (ScreenSong.Mode = smNormal);
   FUpNextStarted := false;
   FUpNextIdx := -1;
+  FUpNextTexIdx := -1;
 
   {**
    * Turn backgroundmusic on
@@ -2188,7 +2191,21 @@ begin
     // cover
     CovS := 300;
     Y := 136;
-    Tex := S.CoverTex;
+    // load the cover from the song's own file (once per song)
+    if (FUpNextTexIdx <> FUpNextIdx) then
+    begin
+      FUpNextTexIdx := FUpNextIdx;
+      FreeAndNil(FUpNextTex);
+      try
+        if S.Cover.IsSet and S.Path.Append(S.Cover).IsFile then
+          FUpNextTex := Renderer.GetTexture(S.Path.Append(S.Cover), TEXTURE_TYPE_PLAIN, 0);
+      except
+        FUpNextTex := nil;
+      end;
+    end;
+    Tex := FUpNextTex;
+    if ((Tex = nil) or Tex.IsEmpty) and (FUpNextIdx <= High(ScreenSong.Button)) then
+      Tex := ScreenSong.Button[FUpNextIdx].Texture;
     if (Tex <> nil) and not Tex.IsEmpty then
       MDrawTex(Tex, CX - CovS / 2, Y, CovS, CovS, 1)
     else

@@ -765,15 +765,14 @@ begin
   if not Scoring then
   begin
     // scoring off: just the song
-    DrawSongChip(HUD_PAD, 38, false, TimeText);
-    DrawUpNext(HUD_PAD, 96, 0);
+    // scoring off: nothing but the phone queue's next song, top right
+    DrawUpNext(MUI_W - HUD_PAD, 38, 1);
   end
   else if (N = 1) then
   begin
     DrawPlayerChip(HUD_PAD, 34, 220, 0, false, ShowScore);
     DrawPopup(HUD_PAD, 100, 0, false);
-    DrawSongChip(MUI_W - HUD_PAD, 38, true, TimeText);
-    DrawUpNext(MUI_W - HUD_PAD, 96, 1);
+    DrawUpNext(MUI_W - HUD_PAD, 45, 1);
   end
   else if (N = 2) then
   begin
