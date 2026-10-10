@@ -7,10 +7,11 @@
 DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 
 mkdir -p "$DIR/game/remote"
-if ! pgrep -f "remote/karaoke_remote.py" >/dev/null 2>&1; then
-  nohup python3 "$DIR/remote/karaoke_remote.py" --dir "$DIR/game/remote" \
-    >"$DIR/game/remote/server.log" 2>&1 &
-fi
+# (re)start the queue server so a git pull or a changed public-url.txt
+# always takes effect
+pkill -f "remote/karaoke_remote.py" >/dev/null 2>&1 && sleep 1
+nohup python3 "$DIR/remote/karaoke_remote.py" --dir "$DIR/game/remote" \
+  >"$DIR/game/remote/server.log" 2>&1 &
 
 cd "$DIR/game"
 exec ./ultrastardx "$@"
