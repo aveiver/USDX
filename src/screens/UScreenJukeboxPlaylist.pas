@@ -89,6 +89,7 @@ const
 implementation
 
 uses
+  UCommon,
   UGraphic,
   UHelp,
   UMain,
