@@ -1,6 +1,6 @@
 [Desktop Entry]
 Version=1.0
-Name=Karaoke (new look)
+Name=Karaoke
 Comment=Karaoke with the new Midnight interface (ui-v2 test build)
 Icon=ultrastar-karaoke-v2
 Exec=/home/karaoke/UltraStar/deploy/launch-ui-v2.sh

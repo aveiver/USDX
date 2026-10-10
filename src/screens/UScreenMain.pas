@@ -435,7 +435,7 @@ begin
 
   // header: wordmark + pills
   DrawLogo(PAD, 36, 46);
-  MText(PAD + 60, 46, 'UltraStar', 24, true, mcText, 1);
+  MText(PAD + 60, 46, 'Karaoke', 24, true, mcText, 1);
   DrawPill(ItemRect(MAIN_OPTIONS), Language.Translate('SING_OPTIONS'), FSel = MAIN_OPTIONS);
   DrawPill(ItemRect(MAIN_EXIT), Language.Translate('SING_EXIT'), FSel = MAIN_EXIT);
 

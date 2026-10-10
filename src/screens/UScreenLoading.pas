@@ -258,9 +258,9 @@ begin
   MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
 
   CX := MUI_W / 2;
-  W := MTextW('UltraStar', 44, true);
+  W := MTextW('Karaoke', 44, true);
   MIconMic(CX - W / 2 - 14, 330, 44, mcAccent, 1);
-  MText(CX - W / 2 + 18, 306, 'UltraStar', 44, true, mcText, 1);
+  MText(CX - W / 2 + 18, 306, 'Karaoke', 44, true, mcText, 1);
 
   // one bar: finding songs fills the first 30%, loading them the rest
   if (LoadingProgress > 0) then
