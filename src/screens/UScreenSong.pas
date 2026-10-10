@@ -70,8 +70,11 @@ type
       MRowRect:     array of TMRect;   // row rectangles (virtual canvas)
       MSearchActive: boolean;          // typing into the header search box
       MSearchText:  UTF8String;
+      MRailHas:     array[0..26] of boolean;  // letters that have artists
 
       function ModernListRect: TMRect;
+      function ModernRailRect: TMRect;
+      procedure ModernJumpLetter(Bucket: integer);
       function ModernHeaderRect(Item: integer): TMRect;
       function ModernSingRect: TMRect;
       procedure ModernSelectSong(SongIdx: integer);
@@ -1003,12 +1006,6 @@ begin
         begin
           if (Songs.SongList.Count > 0) and (FreeListMode) then
             ModernSearchFocus(true);
-          Exit;
-        end;
-
-      SDLK_E:
-        begin
-          OpenEditor;
           Exit;
         end;
 
@@ -4487,13 +4484,55 @@ const
   SB_TOP     = 104;   // top of the cover and the list
   SB_BOTTOM  = 652;   // bottom of the list and the Sing button
   SB_PANEL_W = 360;   // width of the left panel (cover is square)
+  SB_RAIL_W  = 22;    // A-Z jump rail beside the list
 
 function TScreenSong.ModernListRect: TMRect;
 var
   X: single;
 begin
   X := SB_PAD + SB_PANEL_W + 40;
-  Result := MRect(X, SB_TOP, MUI_W - SB_PAD - X, SB_BOTTOM - SB_TOP);
+  // leaves room on the right for the A-Z rail
+  Result := MRect(X, SB_TOP, MUI_W - SB_PAD - SB_RAIL_W - 10 - X, SB_BOTTOM - SB_TOP);
+end;
+
+// A-Z rail beside the list: click a letter to jump to the first artist
+// starting with it (Alt+letter does the same from the keyboard)
+function TScreenSong.ModernRailRect: TMRect;
+begin
+  Result := MRect(MUI_W - SB_PAD - SB_RAIL_W, SB_TOP, SB_RAIL_W, SB_BOTTOM - SB_TOP);
+end;
+
+// 0 = '#' (digits, symbols, accented letters), 1..26 = A..Z
+function ModernLetterBucket(const S: UTF8String): integer;
+var
+  U: UCS4String;
+  C: UCS4Char;
+begin
+  Result := 0;
+  if (S = '') then
+    Exit;
+  U := UTF8ToUCS4String(S);
+  if (Length(U) < 2) then
+    Exit;
+  C := UCS4UpperCase(U[0]);
+  // tab headings can be wrapped in brackets: "[A]"
+  if (C = 91) and (Length(U) > 2) then
+    C := UCS4UpperCase(U[1]);
+  if (C >= Ord('A')) and (C <= Ord('Z')) then
+    Result := C - Ord('A') + 1;
+end;
+
+procedure TScreenSong.ModernJumpLetter(Bucket: integer);
+var
+  B: integer;
+begin
+  for B := 0 to High(CatSongs.Song) do
+    if CatSongs.Song[B].Visible and (ModernLetterBucket(CatSongs.Song[B].Artist) = Bucket) then
+    begin
+      SkipTo(CatSongs.VisibleIndex(B), B, CatSongs.VisibleSongs);
+      SetScrollRefresh;
+      Exit;
+    end;
 end;
 
 // 0 = back button, 1 = search pill, 2 = scoring switch
@@ -4862,6 +4901,40 @@ begin
     end;
   end;
 
+  { ---------- A-Z rail ---------- }
+  if (VS > Rows) and (CatSongs.CatNumShow <> -2) then
+  begin
+    for N := 0 to 26 do
+      MRailHas[N] := false;
+    for B := 0 to High(CatSongs.Song) do
+      if CatSongs.Song[B].Visible then
+        MRailHas[ModernLetterBucket(CatSongs.Song[B].Artist)] := true;
+    if (Interaction >= 0) and (Interaction <= High(CatSongs.Song)) then
+      Line := ModernLetterBucket(CatSongs.Song[Interaction].Artist)
+    else
+      Line := -1;
+
+    VR := ModernRailRect;
+    RowH := VR.H / 27;
+    for N := 0 to 26 do
+    begin
+      if (N = 0) then
+        Lbl := '#'
+      else
+        Lbl := Chr(Ord('A') + N - 1);
+      Y := VR.Y + N * RowH;
+      if (N = Line) then
+      begin
+        MFillCircle(VR.X + VR.W / 2, Y + RowH / 2, 10, mcAccent, 1);
+        MText(VR.X + VR.W / 2, Y + RowH / 2 - 7, Lbl, 12, true, mcOnAccent, 1, mtaCenter);
+      end
+      else if MRailHas[N] then
+        MText(VR.X + VR.W / 2, Y + RowH / 2 - 7, Lbl, 12, true, mcMuted, 1, mtaCenter)
+      else
+        MText(VR.X + VR.W / 2, Y + RowH / 2 - 7, Lbl, 12, false, mcBorder, 1, mtaCenter);
+    end;
+  end;
+
   { ---------- footer: key hints ---------- }
   HX := SB_PAD;
   HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
@@ -4869,6 +4942,7 @@ begin
   HX := HX + MKeyHint(HX, 682, 'K', 'scoring') + 22;
   HX := HX + MKeyHint(HX, 682, 'J', 'type to search') + 22;
   HX := HX + MKeyHint(HX, 682, 'M', 'more') + 22;
+  HX := HX + MKeyHint(HX, 682, 'Alt+A-Z', 'jump to artist') + 22;
   if (VS > 0) and CatSongs.Song[Interaction].isDuet then
     HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
   MKeyHint(HX, 682, 'Esc', 'back');
@@ -4912,6 +4986,12 @@ begin
           ToggleScoring
         else if MHit(VX, VY, ModernSingRect) then
           Result := ParseInput(SDLK_RETURN, 0, true)
+        else if MHit(VX, VY, ModernRailRect) and (CatSongs.VisibleSongs > Theme.Song.ListCover.Rows) then
+        begin
+          I := Trunc((VY - ModernRailRect.Y) / (ModernRailRect.H / 27));
+          if (I >= 0) and (I <= 26) then
+            ModernJumpLetter(I);
+        end
         else if MHit(VX, VY, ModernListRect) then
         begin
           for I := 0 to High(MRowSong) do
