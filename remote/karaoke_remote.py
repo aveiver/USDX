@@ -226,8 +226,21 @@ def lan_address():
 
 
 def publish_address(store, port):
-    """url.txt and qr.txt for the TV; refreshed in case the IP changes."""
-    url = 'http://%s:%d' % (lan_address(), port)
+    """url.txt and qr.txt for the TV; refreshed in case the IP changes.
+
+    A friendlier address (e.g. a DNS name set up on the router) can be put
+    in public-url.txt in the same folder; it is then shown instead.
+    """
+    url = ''
+    try:
+        with open(store.path('public-url.txt'), encoding='utf-8') as f:
+            url = f.read().strip()
+    except OSError:
+        pass
+    if url and '://' not in url:
+        url = 'http://' + url
+    if not url:
+        url = 'http://%s' % lan_address() if port == 80 else 'http://%s:%d' % (lan_address(), port)
     try:
         with open(store.path('url.txt'), encoding='utf-8') as f:
             if f.read().strip() == url:
@@ -405,16 +418,29 @@ def main():
     ap = argparse.ArgumentParser(description='Karaoke song queue for phones on the same network')
     ap.add_argument('--dir', default=os.path.normpath(os.path.join(HERE, '..', 'game', 'remote')),
                     help='folder shared with the game (default: ../game/remote)')
-    ap.add_argument('--port', type=int, default=int(os.environ.get('KARAOKE_PORT', '8080')))
+    ap.add_argument('--port', type=int, default=int(os.environ.get('KARAOKE_PORT', '0')),
+                    help='port to listen on (default: 80 if allowed, otherwise 8080)')
     args = ap.parse_args()
 
     os.makedirs(args.dir, exist_ok=True)
     store = Store(args.dir)
     Handler.store = store
-    url = publish_address(store, args.port)
-    threading.Thread(target=background, args=(store, args.port), daemon=True).start()
 
-    httpd = ThreadingHTTPServer(('0.0.0.0', args.port), Handler)
+    # port 80 means guests don't have to type a port; it needs
+    # net.ipv4.ip_unprivileged_port_start=80 (see README), else use 8080
+    httpd = None
+    for port in ([args.port] if args.port else [80, 8080]):
+        try:
+            httpd = ThreadingHTTPServer(('0.0.0.0', port), Handler)
+            break
+        except PermissionError:
+            continue
+    if httpd is None:
+        sys.exit('Could not open a port for the karaoke queue')
+    port = httpd.server_address[1]
+
+    url = publish_address(store, port)
+    threading.Thread(target=background, args=(store, port), daemon=True).start()
     print('Karaoke queue on %s  (host PIN %s, in %s)' % (url, store.pin, store.path('pin.txt')), flush=True)
     try:
         httpd.serve_forever()

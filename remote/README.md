@@ -18,6 +18,15 @@ python3 remote/karaoke_remote.py --port 9000
 
 Python 3 standard library only - nothing to install.
 
+### A nicer address
+
+- **No port number:** the server uses port 80 when the system allows it,
+  otherwise 8080. To allow it once (Ubuntu):
+  `echo net.ipv4.ip_unprivileged_port_start=80 | sudo tee /etc/sysctl.d/99-karaoke.conf && sudo sysctl --system`
+- **A name instead of an IP:** give the PC a fixed IP and a local DNS name on
+  the router (e.g. `karaoke.home`), then put that name in
+  `game/remote/public-url.txt` - the TV and its QR code show it instead.
+
 The address (and a QR code for it) appears on the game's main menu and at
 the bottom of the song list. Guests open it and tap a song's + to queue it.
 
