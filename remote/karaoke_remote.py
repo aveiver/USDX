@@ -214,7 +214,35 @@ class Store:
         return 'Not in the queue any more'
 
 
+# interfaces that aren't the home network (VPNs, containers, VMs)
+_SKIP_IF = ('lo', 'tun', 'tap', 'wg', 'nordlynx', 'nordtun', 'docker', 'br-', 'veth',
+            'virbr', 'vbox', 'vmnet', 'tailscale', 'zt', 'proton', 'ipsec')
+
+
 def lan_address():
+    """The PC's address on the home network (not a VPN's)."""
+    candidates = []
+    try:
+        import subprocess
+        out = subprocess.run(['ip', '-4', '-o', 'addr', 'show'], capture_output=True,
+                             text=True, timeout=3).stdout
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) < 4 or parts[2] != 'inet':
+                continue
+            name, addr = parts[1], parts[3].split('/')[0]
+            if name.startswith(_SKIP_IF):
+                continue
+            candidates.append(addr)
+    except Exception:
+        pass
+    # home routers almost always hand out 192.168.x.x, then 172.16-31, then 10.x
+    for prefix in ('192.168.', '172.', '10.'):
+        for a in candidates:
+            if a.startswith(prefix):
+                return a
+    if candidates:
+        return candidates[0]
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(('10.255.255.255', 1))   # no packet is sent
@@ -363,6 +391,11 @@ class Handler(BaseHTTPRequestHandler):
                            set_cookies=self.guest_cookie(new_guest))
         else:
             self.send_error(404)
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
 
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
