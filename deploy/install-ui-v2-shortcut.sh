@@ -42,7 +42,7 @@ echo "Installing app menu entry and icon ..."
 mkdir -p "$HOME/.local/share/applications"
 mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps"
 cp "$DESKTOP_FILE" "$HOME/.local/share/applications/$NAME.desktop"
-cp "$FORK_DIR/deploy/ultrastar-karaoke.png" "$HOME/.local/share/icons/hicolor/256x256/apps/$NAME.png"
+cp "$FORK_DIR/deploy/$NAME.png" "$HOME/.local/share/icons/hicolor/256x256/apps/$NAME.png"
 gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
 

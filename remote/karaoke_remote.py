@@ -330,6 +330,9 @@ class Handler(BaseHTTPRequestHandler):
         st = self.store
         if p in ('/', '/index.html'):
             self.send_file(os.path.join(WEB_DIR, 'index.html'), cache=False)
+        elif p in ('/favicon.png', '/apple-touch-icon.png', '/favicon.ico'):
+            name = 'favicon.png' if p != '/apple-touch-icon.png' else 'apple-touch-icon.png'
+            self.send_file(os.path.join(WEB_DIR, name))
         elif p.startswith('/fonts/'):
             name = os.path.basename(p)
             if name in ('Helvetica.ttf', 'Helvetica-Bold.ttf'):

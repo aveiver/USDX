@@ -97,6 +97,29 @@ uses
 const
   PAD = 56;
 
+// app logo: pink capsule mic on a dark rounded tile (same as the app icon).
+// X, Y = top-left, S = size; drawn from the 256-unit icon design
+procedure DrawLogo(X, Y, S: single);
+var
+  K: single;
+begin
+  K := S / 240;
+  X := X - 8 * K;   // the icon's tile starts at 8 units
+  Y := Y - 8 * K;
+  MFillRound(X + 8 * K, Y + 8 * K, 240 * K, 240 * K, 56 * K, mcSurface, 1);
+  MStrokeRound(X + 8 * K, Y + 8 * K, 240 * K, 240 * K, 56 * K, 1, mcBorder, 1);
+  MFillRound(X + 98 * K, Y + 46 * K, 60 * K, 104 * K, 30 * K, mcAccent, 1);
+  MFillRound(X + 112 * K, Y + 72 * K, 32 * K, 5 * K, 2.5 * K, mcBg, 0.35);
+  MFillRound(X + 112 * K, Y + 86 * K, 32 * K, 5 * K, 2.5 * K, mcBg, 0.35);
+  MFillRound(X + 112 * K, Y + 100 * K, 32 * K, 5 * K, 2.5 * K, mcBg, 0.35);
+  // the stand's arc: a thick ring, lower half only
+  MClipBegin(MRect(X + 60 * K, Y + 116 * K, 136 * K, 70 * K));
+  MStrokeRound(X + 76 * K - 6 * K, Y + 64 * K - 6 * K, 116 * K, 116 * K, 58 * K, 12 * K, mcText, 1);
+  MClipEnd;
+  MFillRound(X + 122 * K, Y + 168 * K, 12 * K, 30 * K, 6 * K, mcText, 1);
+  MFillRound(X + 96 * K, Y + 194 * K, 64 * K, 12 * K, 6 * K, mcText, 1);
+end;
+
 // phone queue: QR code + address, top right of the main menu
 procedure DrawQueueCard;
 var
@@ -411,8 +434,8 @@ begin
   MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
 
   // header: wordmark + pills
-  MIconMic(PAD + 14, 59, 30, mcAccent, 1);
-  MText(PAD + 40, 46, 'UltraStar', 24, true, mcText, 1);
+  DrawLogo(PAD, 36, 46);
+  MText(PAD + 60, 46, 'UltraStar', 24, true, mcText, 1);
   DrawPill(ItemRect(MAIN_OPTIONS), Language.Translate('SING_OPTIONS'), FSel = MAIN_OPTIONS);
   DrawPill(ItemRect(MAIN_EXIT), Language.Translate('SING_EXIT'), FSel = MAIN_EXIT);
 
