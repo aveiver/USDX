@@ -176,6 +176,10 @@ type
       // ui-v2 phone queue: countdown to the next queued song
       FQueueTick:           cardinal;
       FQueueOff:            boolean;
+      // scoring off + songs queued: this screen is only an "Up next" countdown
+      FUpNextOnly:          boolean;
+      FUpNextStarted:       boolean;   // already moving on (don't act twice while fading)
+      FUpNextIdx:           integer;
 
       procedure RefreshTexts;
       procedure ResetScores;
@@ -212,6 +216,8 @@ type
       // ui-v2 (Midnight)
       procedure UpdateCounters;
       procedure DrawModern;
+      procedure DrawUpNextOnly;
+      procedure UpNextGo(StartSong: boolean);
     public
       constructor Create; override;
       destructor Destroy; override;
@@ -370,6 +376,19 @@ end;
 function TScreenScore.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin
   Result := true;
+  if PressedDown and FUpNextOnly then
+  begin
+    case PressedKey of
+      SDLK_Q:
+        Result := false;
+      SDLK_RETURN, SDLK_SPACE:
+        UpNextGo(true);
+      SDLK_ESCAPE, SDLK_BACKSPACE:
+        UpNextGo(false);
+    end;
+    Exit;
+  end;
+
   if (PressedDown) then
   begin
     // check normal keys
@@ -1166,6 +1185,9 @@ begin
   PreviewEnd := 0;
   FQueueTick := 0;
   FQueueOff := false;
+  FUpNextOnly := Boolean(Ini.KaraokeMode) and (ScreenSong.Mode = smNormal);
+  FUpNextStarted := false;
+  FUpNextIdx := -1;
 
   {**
    * Turn backgroundmusic on
@@ -1309,12 +1331,16 @@ begin
 
   RefreshTexts;
 
-  if not (Ini.SavePlayback = 1) then
-    StartPreview
-  else
+  // the "Up next" screen stays quiet (no replay of the song just sung)
+  if not FUpNextOnly then
   begin
-    Voice := -1;
-    StartVoice;
+    if not (Ini.SavePlayback = 1) then
+      StartPreview
+    else
+    begin
+      Voice := -1;
+      StartVoice;
+    end;
   end;
 
 end;
@@ -1424,10 +1450,15 @@ begin
     BarTime := 0;
 
   // ui-v2: keep the original count-up timing, draw the Midnight results
-  UpdateAnimation;
-  if ShowFinish then
-    UpdateCounters;
-  DrawModern;
+  if FUpNextOnly then
+    DrawUpNextOnly
+  else
+  begin
+    UpdateAnimation;
+    if ShowFinish then
+      UpdateCounters;
+    DrawModern;
+  end;
 
   Result := true;
 end;
@@ -1894,6 +1925,7 @@ end;
 const
   SC_PAD = 56;
   SCORE_QUEUE_S = 12; // phone queue: seconds on the results before the next song starts
+  UPNEXT_S = 8;       // scoring off: seconds on the "Up next" screen
 
 // count the numbers up in the same order as the old bars
 procedure TScreenScore.UpdateCounters;
@@ -2097,6 +2129,102 @@ begin
     else
       MKeyHint(X, 682, 'Enter', 'skip');
   end;
+
+  MEnd;
+end;
+
+// leave the "Up next" screen: start the queued song, or back to the songs
+procedure TScreenScore.UpNextGo(StartSong: boolean);
+begin
+  if FUpNextStarted then
+    Exit;
+  FUpNextStarted := true;
+  if not (StartSong and RemoteStartNext) then
+    FadeTo(@ScreenSong);
+end;
+
+// scoring off with songs in the phone queue: a big "Up next" card and a
+// short countdown instead of the score screen
+procedure TScreenScore.DrawUpNextOnly;
+var
+  S: TSong;
+  Tex: TTexture;
+  Secs, Fr, CovS, CX, Y, BarW: single;
+  Waiting: integer;
+  Lbl: UTF8String;
+begin
+  RemotePoll;
+  Secs := UPNEXT_S;
+  if not FUpNextStarted then
+  begin
+    if RemoteCanStart then
+      FUpNextIdx := RemoteNextSongIndex
+    else
+      FUpNextIdx := -1;
+    if (FUpNextIdx < 0) then
+      UpNextGo(false)   // the queue was emptied meanwhile
+    else
+    begin
+      if (FQueueTick = 0) then
+        FQueueTick := SDL_GetTicks();
+      Secs := UPNEXT_S - (SDL_GetTicks() - FQueueTick) / 1000;
+      if (Secs <= 0) then
+        UpNextGo(true);
+    end;
+  end;
+  if (Secs < 0) then
+    Secs := 0;
+
+  MBegin;
+  MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
+  CX := MUI_W / 2;
+
+  if (FUpNextIdx >= 0) and (FUpNextIdx <= High(CatSongs.Song)) then
+  begin
+    S := CatSongs.Song[FUpNextIdx];
+
+    MText(CX, 92, 'UP NEXT', 20, true, mcAccent, 1, mtaCenter);
+
+    // cover
+    CovS := 300;
+    Y := 136;
+    Tex := S.CoverTex;
+    if (Tex <> nil) and not Tex.IsEmpty then
+      MDrawTex(Tex, CX - CovS / 2, Y, CovS, CovS, 1)
+    else
+    begin
+      MFillRect(CX - CovS / 2, Y, CovS, CovS, mcSurface2, 1);
+      MIconNote(CX, Y + CovS / 2, CovS * 0.35, mcBorder, 1);
+    end;
+    MCornerMask(CX - CovS / 2, Y, CovS, CovS, 24, mcBg);
+
+    MText(CX, Y + CovS + 26, S.Title, 40, true, mcText, 1, mtaCenter, MUI_W - 160);
+    MText(CX, Y + CovS + 80, S.Artist, 22, false, mcMuted, 1, mtaCenter, MUI_W - 160);
+
+    // countdown bar
+    BarW := 420;
+    Y := Y + CovS + 130;
+    Fr := Secs / UPNEXT_S;
+    MFillRound(CX - BarW / 2, Y, BarW, 8, 4, mcSurface2, 1);
+    if (BarW * Fr > 8) then
+      MFillRound(CX - BarW / 2, Y, BarW * Fr, 8, 4, mcAccent, 1);
+    MText(CX, Y + 22, 'Starting in ' + IntToStr(Trunc(Secs) + 1) + ' s', 18, true, mcText, 1, mtaCenter);
+
+    Waiting := RemoteQueueCount - 1;
+    if (Waiting = 1) then
+      Lbl := '1 more song in the queue'
+    else if (Waiting > 1) then
+      Lbl := IntToStr(Waiting) + ' more songs in the queue'
+    else
+      Lbl := '';
+    if (Lbl <> '') then
+      MText(CX, Y + 52, Lbl, 15, false, mcMuted, 1, mtaCenter);
+  end;
+
+  // footer
+  Y := SC_PAD;
+  Y := Y + MKeyHint(Y, 682, 'Enter', 'start now') + 22;
+  MKeyHint(Y, 682, 'Esc', 'back to songs');
 
   MEnd;
 end;

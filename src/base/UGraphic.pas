@@ -113,6 +113,7 @@ type
 
 var
   Screen:         PSDL_Window;
+  NoAntiAlias:    boolean = false;  // ui-v2: set if the driver refuses an anti-aliased context
   LoadingThread:  PSDL_Thread;
   Mutex:          PSDL_Mutex;
 
@@ -642,6 +643,30 @@ begin
   InitializeScreen;
 end;
 
+// ui-v2: creates the window with 4x anti-aliasing (smooth edges on the
+// drawn shapes); falls back to a plain window if the driver can't do it
+function CreateGameWindow(X, Y, W, H: integer; Flags: UInt32): PSDL_Window;
+begin
+  if NoAntiAlias then
+  begin
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+  end
+  else
+  begin
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
+  end;
+  Result := SDL_CreateWindow('UltraStar Deluxe loading...', X, Y, W, H, Flags);
+  if (Result = nil) then
+  begin
+    Log.LogWarn('Anti-aliased window not available, using a plain one', 'CreateGameWindow');
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
+    Result := SDL_CreateWindow('UltraStar Deluxe loading...', X, Y, W, H, Flags);
+  end;
+end;
+
 procedure InitializeScreen;
 var
   S:      string;
@@ -713,21 +738,21 @@ NoDoubledResolution:
   begin
     Log.LogStatus('Set Video Mode...   Borderless fullscreen', 'SDL_SetVideoMode');
     CurrentWindowMode := Mode_Borderless;
-    screen := SDL_CreateWindow('UltraStar Deluxe loading...',
+    screen := CreateGameWindow(
               Ini.PositionX, Ini.PositionY, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_FULLSCREEN_DESKTOP or SDL_WINDOW_RESIZABLE or SDL_WINDOW_HIDDEN);
   end
   else if Fullscreen then
   begin
     Log.LogStatus('Set Video Mode...   Fullscreen', 'SDL_SetVideoMode');
     CurrentWindowMode := Mode_Fullscreen;
-    screen := SDL_CreateWindow('UltraStar Deluxe loading...',
+    screen := CreateGameWindow(
               SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_FULLSCREEN or SDL_WINDOW_RESIZABLE or SDL_WINDOW_HIDDEN);
   end
   else
   begin
     Log.LogStatus('Set Video Mode...   Windowed', 'SDL_SetVideoMode');
     CurrentWindowMode := Mode_Windowed;
-    screen := SDL_CreateWindow('UltraStar Deluxe loading...',
+    screen := CreateGameWindow(
               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, W, H, SDL_WINDOW_OPENGL or SDL_WINDOW_RESIZABLE or SDL_WINDOW_HIDDEN);
   end;
 

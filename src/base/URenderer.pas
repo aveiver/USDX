@@ -732,6 +732,34 @@ begin
       break;
   end;
 
+  // ui-v2: anti-aliasing can stop some drivers giving a context; try once without
+  if (glcontext = nil) and not NoAntiAlias then
+  begin
+    Log.LogWarn('No OpenGL context with anti-aliasing, retrying without', 'InitRenderer');
+    NoAntiAlias := true;
+    SDL_DestroyWindow(Screen);
+    Screen := nil;
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, ProfileArray[0]);
+    InitializeScreen;
+    for I := Low(MajorArray) to High(MajorArray) do
+    begin
+      if ((I > 0) and (ProfileArray[I] <> ProfileArray[I-1])) then
+      begin
+        SDL_DestroyWindow(Screen);
+        Screen := nil;
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, ProfileArray[I]);
+        InitializeScreen;
+      end
+      else
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, ProfileArray[I]);
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, MajorArray[I]);
+      SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, MinorArray[I]);
+      glcontext := SDL_GL_CreateContext(Screen);
+      if (glcontext <> nil) then
+        break;
+    end;
+  end;
+
   if (glcontext = nil) then
     raise Exception.Create('Failed to obtain OpenGL context');
   SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, @MajorVersion);

@@ -263,6 +263,7 @@ uses
   USongs,
   UNote,
   UIni,
+  URemoteQueue,
   SysUtils;
 
 //-------------
@@ -951,8 +952,16 @@ begin
       if (ScreenSong.Mode = smPartyTournament) then
         Display.FadeTo(@ScreenPartyTournamentWin)
       else if Boolean(Ini.KaraokeMode) then
-        // Karaoke Mode: skip the score reveal, back to the song list
-        Display.FadeTo(@ScreenSong)
+      begin
+        // Karaoke Mode: no score reveal. With songs waiting in the phone
+        // queue the score screen shows just an "Up next" countdown;
+        // otherwise back to the song list
+        RemotePoll;
+        if RemoteCanStart then
+          Display.FadeTo(@ScreenScore)
+        else
+          Display.FadeTo(@ScreenSong);
+      end
       else
         Display.FadeTo(@ScreenScore);
     end;

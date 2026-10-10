@@ -58,6 +58,9 @@ function RemoteCanStart: boolean;
 // starts the next queued song (fades to the singing screen)
 function RemoteStartNext: boolean;
 
+// CatSongs index of the song that would start next (-1 if none)
+function RemoteNextSongIndex: integer;
+
 implementation
 
 uses
@@ -84,6 +87,9 @@ var
   NowHasDur:   boolean = false;
   KeyIndex:    TStringList = nil;   // song key -> CatSongs index
   KeyCount:    integer = -1;
+  // set when a queued song has been started; the screen we're leaving keeps
+  // drawing during the fade and must not start the one after it as well
+  StartedTick: cardinal = 0;
 
 function RemoteDir: UTF8String;
 begin
@@ -333,7 +339,10 @@ begin
   if (Song = nil) then
     Key := ''
   else
+  begin
     Key := SongKey(Song);
+    StartedTick := 0;   // the started song is on screen now
+  end;
   // write when the song changes, and once more when its length is known
   if (Key = NowKey) and ((Key = '') or NowHasDur or (Duration <= 0)) then
     Exit;
@@ -421,9 +430,21 @@ function RemoteCanStart: boolean;
 var
   Idx: integer;
 begin
+  // one start at a time (safety timeout in case the song never loads)
+  if (StartedTick <> 0) and (SDL_GetTicks() - StartedTick < 15000) then
+  begin
+    Result := false;
+    Exit;
+  end;
   Result := (CatSongs <> nil) and (RemoteQueueCount > 0) and (PlayersPlay >= 1) and
             (Length(Player) >= PlayersPlay) and (ScreenSong <> nil) and
             (ScreenSong.Mode = smNormal) and NextSong(Idx);
+end;
+
+function RemoteNextSongIndex: integer;
+begin
+  if (CatSongs = nil) or (RemoteQueueCount = 0) or not NextSong(Result) then
+    Result := -1;
 end;
 
 function RemoteStartNext: boolean;
@@ -440,6 +461,9 @@ begin
       Break;
     end;
 
+  StartedTick := SDL_GetTicks();
+  if (StartedTick = 0) then
+    StartedTick := 1;
   ScreenSong.StopMusicPreview;
   ScreenSong.StopVideoPreview;
   ScreenSong.Mode := smNormal;
