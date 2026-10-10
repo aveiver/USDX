@@ -2970,7 +2970,7 @@ const
   JB_ROWS    = 8;
   JB_ROW_H   = 56;
 
-  JSungCols: array[0..4] of cardinal = ($D4FF4F, $7CC4FF, $FF8A5B, $F5C542, $FF5C8A);
+  JSungCols: array[0..4] of cardinal = ($FF3EB5, $7CC4FF, $FF8A5B, $F5C542, $D4FF4F);
   JTodoCols: array[0..4] of cardinal = ($F2F3F5, $FFE8A3, $BFE6FF, $D8C8FF, $C9F2D6);
   JNextCols: array[0..4] of cardinal = ($A9ADB8, $6E7380, $8FA3BF, $B3A08C, $9DB39A);
 

@@ -76,7 +76,7 @@ var
   mcBorder:    TMColor;  // hairlines
   mcText:      TMColor;  // primary text
   mcMuted:     TMColor;  // secondary text
-  mcAccent:    TMColor;  // lime accent
+  mcAccent:    TMColor;  // fuchsia pink accent
   mcOnAccent:  TMColor;  // text on the accent
   mcGood:      TMColor;  // "ready" dots
 
@@ -783,7 +783,7 @@ initialization
   mcBorder   := MColor($2A2D36);
   mcText     := MColor($F2F3F5);
   mcMuted    := MColor($A9ADB8);
-  mcAccent   := MColor($D4FF4F);
+  mcAccent   := MColor($FF3EB5);   // fuchsia pink
   mcOnAccent := MColor($0D0E12);
   mcGood     := MColor($5BE38C);
 

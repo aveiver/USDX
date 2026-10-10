@@ -67,8 +67,8 @@ procedure ModernSingBackdrop;
 // one tinted-glass note lane per singer
 procedure ModernSingLanes;
 
-// lyrics in Helvetica: current line big (sung part lime), next line grey,
-// plus a shrinking lime "get ready" bar before a line starts
+// lyrics in Helvetica: current line big (sung part accent-coloured), next line grey,
+// plus a shrinking accent-coloured "get ready" bar before a line starts
 procedure ModernSingLyrics(Beat: real);
 
 // song timeline (lyric sections + progress), singer chips, song chip and
@@ -141,7 +141,7 @@ begin
   Lyrics.LowerLineY := LY;
   Lyrics.LowerLineH := H;
 
-  // sung part in lime, the rest of the line white, the next line grey
+  // sung part in the accent colour, the rest of the line white, the next line grey
   Lyrics.LineColor_act.R := mcAccent.R;
   Lyrics.LineColor_act.G := mcAccent.G;
   Lyrics.LineColor_act.B := mcAccent.B;
@@ -462,7 +462,7 @@ begin
 
   MBegin;
 
-  // "get ready": a lime bar that shrinks away until the line starts
+  // "get ready": an accent-coloured bar that shrinks away until the line starts
   if (Length(CurrentSong.Tracks) > 0) and
      (CurrentSong.Tracks[0].CurrentLine >= 0) and
      (CurrentSong.Tracks[0].CurrentLine <= High(CurrentSong.Tracks[0].Lines)) then
@@ -496,7 +496,7 @@ end;
 { --- HUD --- }
 
 // timeline along the top: rounded lyric sections on a track, the played
-// part in lime and a dot for where the song is now
+// part in the accent colour and a dot for where the song is now
 procedure DrawTimeline(CurTime, TotalTime: real);
 const
   TL_Y = 14;
@@ -525,7 +525,7 @@ begin
   // the track
   MFillRound(L, TL_Y, TW, TL_H, TL_H / 2, mcBg, 0.7);
 
-  // pass 0: every lyric section; pass 1: the sections already played, in lime
+  // pass 0: every lyric section; pass 1: the sections already played, in the accent colour
   for pass := 0 to 1 do
   begin
     if (pass = 1) then
