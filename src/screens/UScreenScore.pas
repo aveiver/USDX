@@ -2204,8 +2204,8 @@ begin
       end;
     end;
     Tex := FUpNextTex;
-    if ((Tex = nil) or Tex.IsEmpty) and (FUpNextIdx <= High(ScreenSong.Button)) then
-      Tex := ScreenSong.Button[FUpNextIdx].Texture;
+    if (Tex = nil) or Tex.IsEmpty then
+      Tex := S.CoverTex;
     if (Tex <> nil) and not Tex.IsEmpty then
       MDrawTex(Tex, CX - CovS / 2, Y, CovS, CovS, 1)
     else
