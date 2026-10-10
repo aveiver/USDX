@@ -236,9 +236,11 @@ begin
   end;
 end;
 
+// still to come: not started by us, and not the song on screen right now
 function Waiting(Index: integer): boolean;
 begin
-  Result := (Claimed = nil) or (Claimed.IndexOf(Queue[Index].QID) < 0);
+  Result := ((Claimed = nil) or (Claimed.IndexOf(Queue[Index].QID) < 0)) and
+            ((NowKey = '') or (Queue[Index].Key <> NowKey));
 end;
 
 function RemoteQueueCount: integer;
@@ -331,10 +333,13 @@ begin
   end;
 end;
 
+procedure Claim(const QID: UTF8String); forward;
+
 procedure RemoteNowPlaying(Song: TSong; Elapsed, Duration: real);
 var
   L: TStringList;
   Key: UTF8String;
+  I: integer;
 begin
   if (Song = nil) then
     Key := ''
@@ -346,6 +351,15 @@ begin
   // write when the song changes, and once more when its length is known
   if (Key = NowKey) and ((Key = '') or NowHasDur or (Duration <= 0)) then
     Exit;
+  // a queued song that got started some other way (picked from the song
+  // list) is taken off the queue so it doesn't come round again
+  if (Key <> '') and (Key <> NowKey) then
+    for I := 0 to High(Queue) do
+      if (Queue[I].Key = Key) and ((Claimed = nil) or (Claimed.IndexOf(Queue[I].QID) < 0)) then
+      begin
+        Claim(Queue[I].QID);
+        Break;
+      end;
   NowKey := Key;
   NowHasDur := Duration > 0;
 
