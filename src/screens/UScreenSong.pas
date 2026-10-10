@@ -908,12 +908,6 @@ begin
           Exit;
         end;
 
-      SDLK_K: // ui-v2: scoring on/off (karaoke mode)
-        begin
-          ToggleScoring;
-          Exit;
-        end;
-
       SDLK_F:
         begin
           if (Mode = smNormal) and (SDL_ModState = KMOD_LSHIFT) and MakeMedley then
@@ -933,65 +927,6 @@ begin
           end;
         end;
 
-      SDLK_M: //Show SongMenu
-        begin
-          if (Songs.SongList.Count > 0) then
-          begin
-
-            if not(MakeMedley) and (FreeListMode) and (Mode <> smPartyFree) and (Mode <> smPartyTournament) then
-            begin
-              if (not CatSongs.Song[Interaction].Main) then // clicked on Song
-              begin
-                if CatSongs.CatNumShow = -3 then
-                begin
-                  ScreenSongMenu.OnShow;
-
-                  if (ScreenSong.Mode = smJukebox) then
-                    ScreenSongMenu.MenuShow(SM_Jukebox)
-                  else
-                    ScreenSongMenu.MenuShow(SM_Playlist);
-                end
-                else
-                begin
-                  EnsureMedleyData(Interaction, msCalculated);
-                  ScreenSongMenu.OnShow;
-
-                  if (ScreenSong.Mode = smJukebox) then
-                    ScreenSongMenu.MenuShow(SM_Jukebox)
-                  else
-                    ScreenSongMenu.MenuShow(SM_Main);
-                end;
-              end
-              else
-              begin
-                ScreenSongMenu.OnShow;
-                if (ScreenSong.Mode = smJukebox) then
-                  ScreenSongMenu.MenuShow(SM_Jukebox)
-                else
-                  ScreenSongMenu.MenuShow(SM_Playlist_Load);
-              end;
-            end //Party Mode -> Show Party Menu
-            else
-            begin
-
-              if (MakeMedley) then
-              begin
-                EnsureMedleyData(Interaction, msCalculated);
-                ScreenSongMenu.MenuShow(SM_Medley)
-              end
-              else
-              begin
-                ScreenSongMenu.OnShow;
-                if (Mode <> smPartyFree) and (Mode <> smPartyTournament) then
-                  ScreenSongMenu.MenuShow(SM_Party_Main)
-                else
-                  ScreenSongMenu.MenuShow(SM_Party_Free_Main);
-              end;
-            end;
-          end;
-          Exit;
-        end;
-
       SDLK_P: //Show Playlist Menu
         begin
           if (Songs.SongList.Count > 0) and (FreeListMode) then
@@ -999,13 +934,6 @@ begin
             ScreenSongMenu.OnShow;
             ScreenSongMenu.MenuShow(SM_Playlist_Load);
           end;
-          Exit;
-        end;
-
-      SDLK_J: // ui-v2: type straight into the search box in the header
-        begin
-          if (Songs.SongList.Count > 0) and (FreeListMode) then
-            ModernSearchFocus(true);
           Exit;
         end;
 
@@ -4662,7 +4590,7 @@ begin
   MText(SB_PAD + 64, 40, Title, 30, true, mcText, 1);
   MText(SB_PAD + 64 + MTextW(Title, 30, true) + 16, 51, IntToStr(VS) + ' songs', 17, false, mcMuted, 1);
 
-  // search box: J or a click focuses it, then just type
+  // search box: a click focuses it, then just type
   if (CatSongs.CatNumShow <> -2) and not MSearchActive then
     MSearchText := '';
   R := ModernHeaderRect(1);
@@ -4682,11 +4610,6 @@ begin
     if (TW > R.W - 64) then
       TW := R.W - 64;
     MFillRect(R.X + 48 + TW, R.Y + 13, 2, 22, mcAccent, 1);
-  end;
-  if not MSearchActive and (MSearchText = '') then
-  begin
-    MFillRound(R.X + R.W - 42, R.Y + 11, 28, 26, 7, mcSurface2, 1);
-    MText(R.X + R.W - 28, R.Y + 16, 'J', 15, true, mcText, 1, mtaCenter);
   end;
 
   // scoring switch
@@ -4939,9 +4862,6 @@ begin
   HX := SB_PAD;
   HX := HX + MKeyHint(HX, 682, 'Up/Down', 'browse') + 22;
   HX := HX + MKeyHint(HX, 682, 'Enter', 'sing') + 22;
-  HX := HX + MKeyHint(HX, 682, 'K', 'scoring') + 22;
-  HX := HX + MKeyHint(HX, 682, 'J', 'type to search') + 22;
-  HX := HX + MKeyHint(HX, 682, 'M', 'more') + 22;
   HX := HX + MKeyHint(HX, 682, 'Alt+A-Z', 'jump to artist') + 22;
   if (VS > 0) and CatSongs.Song[Interaction].isDuet then
     HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
