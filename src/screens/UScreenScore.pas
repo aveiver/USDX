@@ -1847,7 +1847,12 @@ begin
       end
     end else
     begin
-      select := ScreenSong.Interaction;
+      // the song just sung (a song started from the phone queue is not the
+      // one highlighted in the song list)
+      if (CatSongs.Selected >= 0) and (CatSongs.Selected <= High(CatSongs.Song)) then
+        select := CatSongs.Selected
+      else
+        select := ScreenSong.Interaction;
       ScreenSong.SongIndex := select;
       changed := true;
     end;

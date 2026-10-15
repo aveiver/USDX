@@ -540,6 +540,12 @@ begin
       SDLK_ESCAPE,
       SDLK_BACKSPACE:
       begin
+        // ui-v2: ignore Esc until the song is actually running (the screen
+        // still fading in) and once we're already leaving - a second Finish
+        // or one before OnShowFinish leaves audio/video half torn down
+        if FadeOut or not ShowFinish then
+          Exit;
+
         // record sound hack:
         //Sound[0].BufferLong
         if ScreenSong.Mode = smMedley then

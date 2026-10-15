@@ -69,6 +69,8 @@ uses
   sdl2,
   UDisplay,
   UGraphic,
+  ULog,
+  UMusic,
   UNote,
   UPath,
   UPlatform,
@@ -478,6 +480,12 @@ begin
   StartedTick := SDL_GetTicks();
   if (StartedTick = 0) then
     StartedTick := 1;
+  Log.LogStatus('Starting queued song: ' + CatSongs.Song[Idx].Artist + ' - ' +
+    CatSongs.Song[Idx].Title, 'RemoteStartNext');
+  // leave the audio the way the song list leaves it (TScreenSong.OnHide):
+  // the score screen's replay is stopped and the volume back at 100%
+  AudioPlayback.SetVolume(1.0);
+  AudioPlayback.Stop;
   ScreenSong.StopMusicPreview;
   ScreenSong.StopVideoPreview;
   ScreenSong.Mode := smNormal;
