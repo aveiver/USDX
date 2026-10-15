@@ -236,6 +236,11 @@ TOptionsMenu = class(TMenu)
     // ui-v2: draw in the Midnight style. Screens with their own extra
     // drawing (record meters, webcam preview, colour pickers) turn this off.
     ModernDraw:  boolean;
+    // ui-v2: extra height under a row (meters etc.), drawn by DrawModernRowExtra
+    function ModernRowExtra(I: integer): single; virtual;
+    procedure DrawModernRowExtra(I: integer; const R: TMRect); virtual;
+    // ui-v2: drawn last, on top of the page (extra footer hints etc.)
+    procedure DrawModernOverlay; virtual;
     procedure Load;
     procedure LoadWidgets; virtual; abstract;
     procedure LoadLegend; virtual;
@@ -2258,14 +2263,28 @@ begin
   Result := true;
 end;
 
+function TOptionsMenu.ModernRowExtra(I: integer): single;
+begin
+  Result := 0;
+end;
+
+procedure TOptionsMenu.DrawModernRowExtra(I: integer; const R: TMRect);
+begin
+end;
+
+procedure TOptionsMenu.DrawModernOverlay;
+begin
+end;
+
 procedure TOptionsMenu.DrawModern;
 var
-  I, N, Row, SelRow: integer;
-  W, Y, ViewH, RowTop, VW, HX: single;
+  I, N: integer;
+  W, Y, ViewH, RowTop, RowH, Acc, Extra, VW, HX: single;
   R: TMRect;
   Lbl, Val: UTF8String;
   SS: TSelectSlide;
   Shown: boolean;
+  Tops: array of single;
 begin
   MBegin;
   MFillRect(0, 0, MUI_W, MUI_H, mcBg, 1);
@@ -2279,41 +2298,19 @@ begin
 
   N := Length(Interactions);
   SetLength(FRowRects, N);
+  SetLength(Tops, N);
   W := MUI_W - 2 * OPT_PAD;
   if (W > 960) then
     W := 960;
   ViewH := OPT_BOTTOM - OPT_TOP;
 
-  // which visual row is selected (hidden widgets take no space)
-  Row := 0;
-  SelRow := 0;
+  // lay the rows out (hidden widgets take no space, some rows are taller)
+  Acc := 0;
+  RowTop := 0;
+  RowH := OPT_ROW_H;
   for I := 0 to N - 1 do
   begin
-    if (I = Interaction) then
-      SelRow := Row;
-    case Interactions[I].Typ of
-      iSelectS: Shown := SelectsS[Interactions[I].Num].Visible;
-      iButton:  Shown := Button[Interactions[I].Num].Visible;
-    else
-      Shown := false;
-    end;
-    if Shown then
-      Inc(Row);
-  end;
-
-  // keep the selected row in view
-  RowTop := SelRow * (OPT_ROW_H + OPT_GAP);
-  if (RowTop < FScroll) then
-    FScroll := RowTop;
-  if (RowTop + OPT_ROW_H > FScroll + ViewH) then
-    FScroll := RowTop + OPT_ROW_H - ViewH;
-  FScrollAnim := MApproach(FScrollAnim, FScroll, 16);
-
-  MClipBegin(MRect(OPT_PAD - 10, OPT_TOP - 8, W + 20, ViewH + 16));
-  Row := 0;
-  for I := 0 to N - 1 do
-  begin
-    FRowRects[I] := MRect(0, 0, 0, 0);
+    Tops[I] := -1;
     case Interactions[I].Typ of
       iSelectS: Shown := SelectsS[Interactions[I].Num].Visible;
       iButton:  Shown := Button[Interactions[I].Num].Visible;
@@ -2322,11 +2319,34 @@ begin
     end;
     if not Shown then
       Continue;
+    Tops[I] := Acc;
+    Extra := ModernRowExtra(I);
+    if (I = Interaction) then
+    begin
+      RowTop := Acc;
+      RowH := OPT_ROW_H + Extra;
+    end;
+    Acc := Acc + OPT_ROW_H + Extra + OPT_GAP;
+  end;
 
-    Y := OPT_TOP + Row * (OPT_ROW_H + OPT_GAP) - FScrollAnim;
-    R := MRect(OPT_PAD, Y, W, OPT_ROW_H);
+  // keep the selected row in view
+  if (RowTop < FScroll) then
+    FScroll := RowTop;
+  if (RowTop + RowH > FScroll + ViewH) then
+    FScroll := RowTop + RowH - ViewH;
+  FScrollAnim := MApproach(FScrollAnim, FScroll, 16);
+
+  MClipBegin(MRect(OPT_PAD - 10, OPT_TOP - 8, W + 20, ViewH + 16));
+  for I := 0 to N - 1 do
+  begin
+    FRowRects[I] := MRect(0, 0, 0, 0);
+    if (Tops[I] < 0) then
+      Continue;
+
+    Extra := ModernRowExtra(I);
+    Y := OPT_TOP + Tops[I] - FScrollAnim;
+    R := MRect(OPT_PAD, Y, W, OPT_ROW_H + Extra);
     FRowRects[I] := R;
-    Inc(Row);
 
     if (I = Interaction) then
     begin
@@ -2350,9 +2370,9 @@ begin
       if (VW > R.W * 0.4) then
         VW := R.W * 0.4;
       HX := R.X + R.W - 34;
-      MIconForward(HX, R.Y + R.H / 2, 20, mcMuted, 1);
+      MIconForward(HX, R.Y + OPT_ROW_H / 2, 20, mcMuted, 1);
       MText(HX - 20, R.Y + 20, Val, 19, true, mcAccent, 1, mtaRight, R.W * 0.4);
-      MIconBack(HX - 20 - VW - 18, R.Y + R.H / 2, 20, mcMuted, 1);
+      MIconBack(HX - 20 - VW - 18, R.Y + OPT_ROW_H / 2, 20, mcMuted, 1);
     end
     else
     begin
@@ -2360,8 +2380,11 @@ begin
       if (Length(Button[Interactions[I].Num].Text) > 0) then
         Lbl := Button[Interactions[I].Num].Text[0].Text;
       MText(R.X + 24, R.Y + 20, Lbl, 19, true, mcText, 1, mtaLeft, R.W - 80);
-      MIconForward(R.X + R.W - 34, R.Y + R.H / 2, 20, mcMuted, 1);
+      MIconForward(R.X + R.W - 34, R.Y + OPT_ROW_H / 2, 20, mcMuted, 1);
     end;
+
+    if (Extra > 0) then
+      DrawModernRowExtra(I, MRect(R.X + 24, R.Y + OPT_ROW_H - 8, R.W - 48, Extra));
   end;
   MClipEnd;
 
@@ -2370,6 +2393,8 @@ begin
   HX := HX + MKeyHint(HX, 682, 'Up/Down', 'choose') + 22;
   HX := HX + MKeyHint(HX, 682, 'Left/Right', 'change') + 22;
   MKeyHint(HX, 682, 'Esc', 'back');
+
+  DrawModernOverlay;
 
   MEnd;
 end;

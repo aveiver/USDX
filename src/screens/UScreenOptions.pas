@@ -139,18 +139,6 @@ begin
           Exit;
         end;
 
-      SDLK_L:
-        begin
-          FadeTo(@ScreenOptionsLyrics, SoundLib.Start);
-          Exit;
-        end;
-
-      SDLK_T:
-        begin
-          FadeTo(@ScreenOptionsThemes, SoundLib.Start);
-          Exit;
-        end;
-
       SDLK_R:
         begin
           OpenRecordOptions;
@@ -160,30 +148,6 @@ begin
       SDLK_A:
         begin
           FadeTo(@ScreenOptionsAdvanced, SoundLib.Start);
-          Exit;
-        end;
-
-      SDLK_N:
-        begin
-          if (High(DataBase.NetworkUser) = -1) then
-            ScreenPopupError.ShowPopup(Language.Translate('SING_OPTIONS_NETWORK_NO_DLL'))
-          else
-          begin
-            AudioPlayback.PlaySound(SoundLib.Back);
-            FadeTo(@ScreenOptionsNetwork);
-          end;
-          Exit;
-        end;
-
-      SDLK_W:
-        begin
-          FadeTo(@ScreenOptionsWebcam, SoundLib.Start);
-          Exit;
-        end;
-
-      SDLK_J:
-        begin
-          FadeTo(@ScreenOptionsJukebox, SoundLib.Start);
           Exit;
         end;
 
@@ -235,18 +199,6 @@ begin
             FadeTo(@ScreenOptionsInput);
           end;
 
-          if Interaction = ButtonLyricsIID then
-          begin
-            AudioPlayback.PlaySound(SoundLib.Start);
-            FadeTo(@ScreenOptionsLyrics);
-          end;
-
-          if Interaction = ButtonThemesIID then
-          begin
-            AudioPlayback.PlaySound(SoundLib.Start);
-            FadeTo(@ScreenOptionsThemes);
-          end;
-
           if Interaction = ButtonRecordIID then
           begin
             OpenRecordOptions;
@@ -256,34 +208,6 @@ begin
           begin
             AudioPlayback.PlaySound(SoundLib.Start);
             FadeTo(@ScreenOptionsAdvanced);
-          end;
-
-          if Interaction = ButtonNetworkIID then
-          begin
-            if ((High(DataBase.NetworkUser) = -1)) then
-              ScreenPopupError.ShowPopup(Language.Translate('SING_OPTIONS_NETWORK_NO_DLL'))
-            else
-            begin
-              AudioPlayback.PlaySound(SoundLib.Back);
-              FadeTo(@ScreenOptionsNetwork);
-            end;
-          end;
-
-          if Interaction = ButtonWebcamIID then
-          begin
-            AudioPlayback.PlaySound(SoundLib.Back);
-            FadeTo(@ScreenOptionsWebcam);
-          end;
-
-          if Interaction = ButtonJukeboxIID then
-          begin
-            if (Songs.SongList.Count >= 1) then
-            begin
-              AudioPlayback.PlaySound(SoundLib.Start);
-              FadeTo(@ScreenOptionsJukebox);
-            end
-            else //show error message, No Songs Loaded
-              ScreenPopupError.ShowPopup(Language.Translate('ERROR_NO_SONGS'));
           end;
 
           if Interaction = ButtonExitIID then
@@ -341,14 +265,17 @@ begin
   AddButtonChecked(Theme.Options.ButtonSound, OPTIONS_DESC_INDEX_SOUND,  ButtonSoundIID);
   AddButtonChecked(Theme.Options.ButtonInput, OPTIONS_DESC_INDEX_INPUT,  ButtonInputIID);
 
-  AddButtonChecked(Theme.Options.ButtonLyrics, OPTIONS_DESC_INDEX_LYRICS,  ButtonLyricsIID);
-  AddButtonChecked(Theme.Options.ButtonThemes, OPTIONS_DESC_INDEX_THEMES,  ButtonThemesIID);
+  // ui-v2: Lyrics, Themes, Network, Webcam and Jukebox options are gone -
+  // the Midnight look replaces them. Park their IIDs out of reach (they
+  // default to 0, which would otherwise match the Game tile).
+  ButtonLyricsIID  := High(cardinal);
+  ButtonThemesIID  := High(cardinal);
+  ButtonNetworkIID := High(cardinal);
+  ButtonWebcamIID  := High(cardinal);
+  ButtonJukeboxIID := High(cardinal);
+
   AddButtonChecked(Theme.Options.ButtonRecord, OPTIONS_DESC_INDEX_RECORD,  ButtonRecordIID);
   AddButtonChecked(Theme.Options.ButtonAdvanced, OPTIONS_DESC_INDEX_ADVANCED,  ButtonAdvancedIID);
-  AddButtonChecked(Theme.Options.ButtonNetwork, OPTIONS_DESC_INDEX_NETWORK,  ButtonNetworkIID);
-
-  AddButtonChecked(Theme.Options.ButtonWebcam, OPTIONS_DESC_INDEX_WEBCAM,  ButtonWebcamIID);
-  AddButtonChecked(Theme.Options.ButtonJukebox, OPTIONS_DESC_INDEX_JUKEBOX,  ButtonJukeboxIID);
 
   AddButtonChecked(Theme.Options.ButtonExit, OPTIONS_DESC_INDEX_BACK,  ButtonExitIID);
 
@@ -386,8 +313,8 @@ end;
 
 const
   OH_PAD  = 56;
-  OH_COLS = 4;
-  OH_SHORTCUTS: array[0..10] of string = ('G', 'H', 'S', 'I', 'L', 'T', 'R', 'A', 'N', 'W', 'J');
+  OH_COLS = 3;
+  OH_SHORTCUTS: array[0..5] of string = ('G', 'H', 'S', 'I', 'R', 'A');
 
 // tiles are every interaction except the Back button (the last one)
 function TScreenOptions.TileCount: integer;
@@ -468,7 +395,7 @@ begin
   N := TileCount;
   SetLength(FTileRects, N);
   TileW := (MUI_W - 2 * OH_PAD - (OH_COLS - 1) * 20) / OH_COLS;
-  TileH := 132;
+  TileH := 180;
   for I := 0 to N - 1 do
   begin
     X := OH_PAD + (I mod OH_COLS) * (TileW + 20);
@@ -485,6 +412,8 @@ begin
     Lbl := '';
     if (Interactions[I].Typ = iButton) and (Length(Button[Interactions[I].Num].Text) > 0) then
       Lbl := Button[Interactions[I].Num].Text[0].Text;
+    if (cardinal(I) = ButtonRecordIID) then
+      Lbl := 'Microphones';
     MText(R.X + 24, R.Y + R.H - 52, Lbl, 26, true, mcText, 1, mtaLeft, R.W - 48);
 
     // keyboard shortcut chip

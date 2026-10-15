@@ -36,6 +36,7 @@ interface
 uses
   UMenu,
   UMenuWidget,
+  UModernUI,
   UMusic,
   URecord,
   UThemes;
@@ -112,6 +113,13 @@ type
 
       procedure LoadWidgets; override;
 
+      // ui-v2: meters drawn inside the option rows
+      function ModernRowExtra(I: integer): single; override;
+      procedure DrawModernRowExtra(I: integer; const R: TMRect); override;
+      procedure DrawModernOverlay; override;
+      function ModernMeterColor: TMColor;
+      function UpdatePeak(Volume: single): single;
+
     public
       constructor Create; override;
       destructor Destroy; override;
@@ -137,6 +145,7 @@ const
 implementation
 
 uses
+  UCommon,
   UDisplay,
   UDraw,
   UFiles,
@@ -493,13 +502,13 @@ begin
           Result := false;
           Exit;
         end;
-      SDLK_PLUS:
+      SDLK_PLUS, SDLK_EQUALS, SDLK_KP_PLUS:
         begin
           // FIXME: add a nice volume-slider instead
           // or at least provide visualization and acceleration if the user holds the key pressed.
           ChangeVolume(0.02);
         end;
-      SDLK_MINUS:
+      SDLK_MINUS, SDLK_KP_MINUS:
         begin
           // FIXME: add a nice volume-slider instead
           // or at least provide visualization and acceleration if the user holds the key pressed.
@@ -591,8 +600,8 @@ end;
 constructor TScreenOptionsRecord.Create;
 begin
   inherited Create;
-  // ui-v2: this page draws extra things at the old layout positions, keep the classic look for now
-  ModernDraw := false;
+  // ui-v2: Midnight look, meters drawn under the Input and Player rows
+  ModernDraw := true;
   Description := Language.Translate('SING_OPTIONS_RECORD_DESC');
   WhereAmI := Language.Translate('SING_OPTIONS_RECORD_WHEREAMI');
   Load;
@@ -896,6 +905,157 @@ begin
     SelectThresholdID := AddSelectSlide('SING_OPTIONS_SOUND_THRESHOLD', Ini.ThresholdIndex, IThreshold);
     AddSelectSlide('SING_OPTIONS_SOUND_MIC_BOOST', Ini.MicBoost, IMicBoostTranslated);
   end;
+end;
+
+{ ui-v2: Midnight meters }
+
+const
+  REC_VOL_H   = 30;  // under the Input row: source volume
+  REC_METER_H = 62;  // under the Player row: level + pitch
+
+function TScreenOptionsRecord.ModernRowExtra(I: integer): single;
+begin
+  Result := 0;
+  if (I < 0) or (I > High(Interactions)) or (Interactions[I].Typ <> iSelectS) then
+    Exit;
+  if (Length(AudioInputProcessor.DeviceList) = 0) then
+    Exit;
+  if (Interactions[I].Num = SelectInputSourceID) then
+    Result := REC_VOL_H
+  else if (Interactions[I].Num = SelectAssigneeID) then
+    Result := REC_METER_H;
+end;
+
+function TScreenOptionsRecord.ModernMeterColor: TMColor;
+var
+  Device: TAudioInputDevice;
+  Map: integer;
+  C: TRGB;
+begin
+  Result := mcAccent;
+  if (PreviewDeviceIndex < 0) or (PreviewDeviceIndex > High(AudioInputProcessor.DeviceList)) then
+    Exit;
+  Device := AudioInputProcessor.DeviceList[PreviewDeviceIndex];
+  if (State.ChannelIndex < 0) or
+     (State.ChannelIndex > High(Ini.InputDeviceConfig[Device.CfgIndex].ChannelToPlayerMap)) then
+    Exit;
+  Map := Ini.InputDeviceConfig[Device.CfgIndex].ChannelToPlayerMap[State.ChannelIndex];
+  if (Map = CHANNEL_OFF) or (Map - 1 > High(Ini.SingColor)) then
+  begin
+    Result := mcMuted;
+    Exit;
+  end;
+  C := GetPlayerColor(Ini.SingColor[Map - 1]);
+  Result.R := C.R;
+  Result.G := C.G;
+  Result.B := C.B;
+end;
+
+function TScreenOptionsRecord.UpdatePeak(Volume: single): single;
+var
+  Delta: single;
+begin
+  Delta := (SDL_GetTicks() - ChannelPeak.Time) / 1000;
+  Result := ChannelPeak.Volume - Delta * Delta * PeakDecay;
+  if (Volume > Result) then
+  begin
+    Result := Volume;
+    ChannelPeak.Volume := Volume;
+    ChannelPeak.Time := SDL_GetTicks();
+  end;
+  if (Result < 0) then
+    Result := 0;
+end;
+
+procedure TScreenOptionsRecord.DrawModernRowExtra(I: integer; const R: TMRect);
+var
+  BX, BW, Y, V, Peak, Thr, BoxW: single;
+  T: integer;
+  C: TMColor;
+  Tone: UTF8String;
+  Live: boolean;
+begin
+  Live := (PreviewChannel <> nil) and (PreviewDeviceIndex >= 0);
+  BX := R.X + 96;
+  BW := R.W - 96 - 70;
+
+  if (Interactions[I].Num = SelectInputSourceID) then
+  begin
+    // source (hardware) volume
+    Y := R.Y + 6;
+    MText(R.X, Y - 2, 'Volume', 15, false, mcMuted, 1);
+    MFillRound(BX, Y + 3, BW, 8, 4, mcBorder, 1);
+    if (SourceVolume >= 0) then
+    begin
+      V := SourceVolume;
+      if (V > 1) then V := 1;
+      if (V > 0.01) then
+        MFillRound(BX, Y + 3, BW * V, 8, 4, mcAccent, 1);
+      MText(R.X + R.W, Y - 2, IntToStr(Round(V * 100)) + '%', 15, true, mcText, 1, mtaRight);
+    end
+    else
+      MText(R.X + R.W, Y - 2, 'fixed', 15, false, mcMuted, 1, mtaRight);
+    Exit;
+  end;
+
+  if (Interactions[I].Num <> SelectAssigneeID) then
+    Exit;
+
+  C := ModernMeterColor;
+
+  // input level, with the threshold zone and a falling peak marker
+  Y := R.Y + 6;
+  MText(R.X, Y - 2, 'Level', 15, false, mcMuted, 1);
+  MFillRound(BX, Y + 2, BW, 10, 5, mcBorder, 1);
+  Thr := IThresholdVals[Ini.ThresholdIndex];
+  MFillRound(BX, Y + 2, BW * Thr, 10, 5, mcMuted, 0.25);
+  V := 0;
+  Peak := 0;
+  if Live then
+  begin
+    V := PreviewChannel.MaxSampleVolume();
+    if (V > 1) then V := 1;
+    Peak := UpdatePeak(V);
+    if (Peak > 1) then Peak := 1;
+  end;
+  if (V > 0.01) then
+    MFillRound(BX, Y + 2, BW * V, 10, 5, C, 1);
+  if (Peak > 0.01) then
+    MFillRect(BX + BW * Peak - 1, Y, 2, 14, mcText, 0.9);
+  MFillRect(BX + BW * Thr - 1, Y - 2, 2, 18, mcText, 0.45);
+  if (V >= Thr) then
+    MText(R.X + R.W, Y - 2, 'hearing you', 13, true, C, 1, mtaRight)
+  else
+    MText(R.X + R.W, Y - 2, 'quiet', 13, false, mcMuted, 1, mtaRight);
+
+  // detected pitch
+  Y := R.Y + 32;
+  MText(R.X, Y - 2, 'Pitch', 15, false, mcMuted, 1);
+  Tone := '';
+  if Live then
+  begin
+    PreviewChannel.AnalyzeBuffer();
+    if PreviewChannel.ToneValid then
+      Tone := PreviewChannel.ToneString;
+  end;
+  BoxW := BW / NumHalftones;
+  for T := 0 to NumHalftones - 1 do
+  begin
+    if Live and PreviewChannel.ToneValid and (PreviewChannel.ToneAbs = T) then
+      MFillRound(BX + T * BoxW + 1, Y, BoxW - 2, 14, 3, C, 1)
+    else
+      MFillRound(BX + T * BoxW + 1, Y + 4, BoxW - 2, 6, 3, mcBorder, 1);
+  end;
+  if (Tone <> '') then
+    MText(R.X + R.W, Y - 2, Tone, 16, true, mcText, 1, mtaRight)
+  else
+    MText(R.X + R.W, Y - 2, '-', 16, false, mcMuted, 1, mtaRight);
+end;
+
+procedure TScreenOptionsRecord.DrawModernOverlay;
+begin
+  if (Length(AudioInputProcessor.DeviceList) > 0) then
+    MKeyHint(MUI_W - 56 - 200, 682, '+ / -', 'mic volume');
 end;
 
 end.
