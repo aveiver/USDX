@@ -5,7 +5,17 @@ set -euo pipefail
 
 VENV="$HOME/vocal-remover"
 
-sudo apt-get install -y python3-venv ffmpeg
+# system packages: need an admin account, so only ask for them when missing
+if ! command -v ffmpeg >/dev/null 2>&1 || ! python3 -c "import ensurepip" >/dev/null 2>&1; then
+  if sudo -n true 2>/dev/null || groups | grep -qw sudo; then
+    sudo apt-get install -y python3-venv ffmpeg
+  else
+    echo "Missing system packages (ffmpeg / python3-venv). From your admin account run:"
+    echo "  sudo apt-get install -y python3-venv ffmpeg"
+    echo "then run this script again as $(whoami)."
+    exit 1
+  fi
+fi
 
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install --upgrade pip
