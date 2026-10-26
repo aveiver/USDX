@@ -2248,6 +2248,14 @@ begin
   Y := Y + MKeyHint(Y, 682, 'Enter', 'start now') + 22;
   MKeyHint(Y, 682, 'Esc', 'back to songs');
 
+  // where guests can add songs, like the song list footer
+  if (RemoteQRSize > 0) and (RemoteURL <> '') then
+  begin
+    MText(MUI_W - SC_PAD - 60 - 12, 671, 'Queue Songs', 15, true, mcText, 1, mtaRight);
+    MText(MUI_W - SC_PAD - 60 - 12, 690, 'Scan with your phone', 13, false, mcMuted, 1, mtaRight);
+    RemoteDrawQR(MUI_W - SC_PAD - 60, 657, 60, 6);
+  end;
+
   MEnd;
 end;
 
