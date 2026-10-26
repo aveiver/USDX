@@ -45,6 +45,9 @@ function RemoteQueueItem(Index: integer): TRemoteItem;
 function RemoteURL: UTF8String;
 function RemoteQRSize: integer;
 function RemoteQRDark(X, Y: integer): boolean;
+// draws the QR code (white tile, quiet zone) on the Midnight virtual canvas;
+// does nothing while there's no address
+procedure RemoteDrawQR(X, Y, Size, Radius: single);
 
 // writes songs.tsv for the server (skipped when nothing changed)
 procedure RemoteExportSongs;
@@ -70,6 +73,7 @@ uses
   UDisplay,
   UGraphic,
   ULog,
+  UModernUI,
   UMusic,
   UNote,
   UPath,
@@ -293,6 +297,33 @@ function RemoteQRDark(X, Y: integer): boolean;
 begin
   Result := (QR <> nil) and (Y >= 0) and (Y < QR.Count) and (X >= 0) and
             (X < Length(QR[Y])) and (QR[Y][X + 1] = '1');
+end;
+
+procedure RemoteDrawQR(X, Y, Size, Radius: single);
+var
+  N, Row, Col, Run: integer;
+  Cell: single;
+begin
+  N := RemoteQRSize;
+  if (N = 0) or (URL = '') then
+    Exit;
+  MFillRound(X, Y, Size, Size, Radius, MColor($FFFFFF), 1);
+  Cell := Size / (N + 4);   // quiet zone of 2 modules
+  for Row := 0 to N - 1 do
+  begin
+    Col := 0;
+    while (Col < N) do
+      if RemoteQRDark(Col, Row) then
+      begin
+        Run := Col;
+        while (Col < N) and RemoteQRDark(Col, Row) do
+          Inc(Col);
+        MFillRect(X + (Run + 2) * Cell, Y + (Row + 2) * Cell,
+                  (Col - Run) * Cell + 0.3, Cell + 0.3, MColor($000000), 1);
+      end
+      else
+        Inc(Col);
+  end;
 end;
 
 procedure RemoteExportSongs;

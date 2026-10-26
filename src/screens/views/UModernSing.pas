@@ -708,7 +708,7 @@ var
   Item: TRemoteItem;
   Count: integer;
   S, More: UTF8String;
-  W, TW, MW: single;
+  W, TW, MW, Q: single;
 begin
   RemotePoll;
   Count := RemoteQueueCount;
@@ -728,10 +728,17 @@ begin
   else
     MW := 0;
   W := 18 + MTextW('UP NEXT', 12, true) + 10 + TW + 16 + MW;
+  // QR code to the right of the pill so others can queue too
+  if (RemoteQRSize > 0) and (RemoteURL <> '') then
+    Q := 58
+  else
+    Q := 0;
   case Mode of
-    1: X := X - W;
-    2: X := X - W / 2;
+    1: X := X - W - Q - 10 * Ord(Q > 0);
+    2: X := X - (W + Q + 10 * Ord(Q > 0)) / 2;
   end;
+  if (Q > 0) then
+    RemoteDrawQR(X + W + 10, Y, Q, 8);
   MFillRound(X, Y, W, 34, 17, mcSurface, 1);
   MStrokeRound(X, Y, W, 34, 17, 1, mcBorder, 1);
   MText(X + 18, Y + 10, 'UP NEXT', 12, true, mcAccent, 1);

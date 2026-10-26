@@ -4612,8 +4612,8 @@ var
   RowBg:      TMColor;
   HX:         single;
   TitleSize:  single;
-  QN, QRow, QCol, QRun: integer;
-  QX, QY, QS, QCell: single;
+  QN: integer;
+  QX, QY, QS: single;
 begin
   VS := CatSongs.VisibleSongs;
   Rows := Theme.Song.ListCover.Rows;
@@ -4955,26 +4955,7 @@ begin
         MText(QX - 12, 671, 'Queue Songs', 15, true, mcText, 1, mtaRight);
         MText(QX - 12, 690, 'Scan with your phone', 13, false, mcMuted, 1, mtaRight);
       end;
-      // white tile with a quiet zone of 2 modules
-      MFillRound(QX, QY, QS, QS, 6, MColor($FFFFFF), 1);
-      QCell := QS / (QN + 4);
-      for QRow := 0 to QN - 1 do
-      begin
-        QCol := 0;
-        while (QCol < QN) do
-        begin
-          if RemoteQRDark(QCol, QRow) then
-          begin
-            QRun := QCol;
-            while (QCol < QN) and RemoteQRDark(QCol, QRow) do
-              Inc(QCol);
-            MFillRect(QX + (QRun + 2) * QCell, QY + (QRow + 2) * QCell,
-                      (QCol - QRun) * QCell + 0.3, QCell + 0.3, MColor($000000), 1);
-          end
-          else
-            Inc(QCol);
-        end;
-      end;
+      RemoteDrawQR(QX, QY, QS, 6);
     end;
   end;
 
