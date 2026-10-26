@@ -180,7 +180,7 @@ def main():
             print('  ' + os.path.relpath(txt, songs_root))
         return
 
-    done = failed = 0
+    done = failed = in_a_row = 0
     run_start = time.time()
     for n, (txt, audio, audio_tag) in enumerate(todo, 1):
         folder = os.path.dirname(txt)
@@ -225,12 +225,18 @@ def main():
             shutil.copymode(txt, tmp)
             os.replace(tmp, txt)
             done += 1
+            in_a_row = 0
             left = (time.time() - run_start) / n * (len(todo) - n)
             print('    ok (%ds) -> %s   [about %dh%02dm to go]'
                   % (time.time() - started, name, left // 3600, left % 3600 // 60), flush=True)
         except Exception as e:  # keep going with the next song
             failed += 1
+            in_a_row += 1
             print('    FAILED: %s' % e, flush=True)
+            if in_a_row >= 3:
+                print('\nStopping: 3 songs in a row failed, so the problem is probably the '
+                      'setup, not the songs. Fix the error above and run again.')
+                break
 
     print('\nDone: %d made, %d failed. Originals of changed .txt files are in %s'
           % (done, failed, args.backup))
