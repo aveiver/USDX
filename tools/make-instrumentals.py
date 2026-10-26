@@ -37,6 +37,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import zipfile
 
 NOTE_LINE = re.compile(rb'^\s*[:*FRG\-PE]')
 
@@ -87,6 +88,20 @@ def separate(python, model, audio, workdir):
     return out
 
 
+def remove_broken_models(model_dir):
+    """audio-separator downloads straight into the final file, so a download
+    cut short (Ctrl+C) leaves a broken model it never fetches again. Model
+    checkpoints are zip files; delete any that aren't complete."""
+    if not os.path.isdir(model_dir):
+        return
+    for f in os.listdir(model_dir):
+        path = os.path.join(model_dir, f)
+        if f.endswith(('.ckpt', '.pth')) and os.path.isfile(path) and not zipfile.is_zipfile(path):
+            print('    deleting incomplete model download %s (%d MB), it will download again'
+                  % (f, os.path.getsize(path) // 1048576), flush=True)
+            os.remove(path)
+
+
 def separate_karaoke(python, model, audio, workdir):
     """Removes the lead vocal only (backing vocals stay); returns the mp3 path.
 
@@ -105,10 +120,12 @@ def separate_karaoke(python, model, audio, workdir):
     if not os.path.isfile(tool):
         raise RuntimeError('audio-separator not found next to ' + python +
                            ' (run setup-karaoke-remover.sh, or pass --python)')
+    model_dir = os.path.expanduser('~/karaoke-remover/models')
+    remove_broken_models(model_dir)
     out_dir = os.path.join(workdir, 'out')
     cmd = [tool, wav, '--output_dir', out_dir, '--output_format', 'MP3',
            '--output_bitrate', '256k',
-           '--model_file_dir', os.path.expanduser('~/karaoke-remover/models'),
+           '--model_file_dir', model_dir,
            '--custom_output_names', '{"Instrumental": "instrumental", "Vocals": "lead"}']
     if model.endswith(('.ckpt', '.onnx', '.pth', '.yaml')):
         cmd += ['-m', model]
