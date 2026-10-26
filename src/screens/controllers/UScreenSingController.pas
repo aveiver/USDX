@@ -561,11 +561,6 @@ begin
         Pause;
       end;
 
-      SDLK_K:
-      begin
-        AudioPlayback.ToggleKaraoke;
-      end;
-
       SDLK_RIGHT:
       begin
         if ((SDL_ModState and KMOD_LCTRL) <> 0) then

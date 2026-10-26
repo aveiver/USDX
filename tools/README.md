@@ -28,5 +28,6 @@ can stop it and run it again later, because finished songs are skipped:
 
 * **Options > Sound > Vocals Volume** sets the mix: 0% = backing track only,
   100% = the original song. It is remembered.
-* **K** while singing flips between the two (and remembers the choice).
+* The **Vocals** switch at the top of the song list (next to Scoring) turns
+  the original vocals on or off.
 * Songs without a backing track just play normally.

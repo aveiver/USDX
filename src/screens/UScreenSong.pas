@@ -65,6 +65,7 @@ type
       MListOffset:  single;   // animated first visible list line
       MHighlightC:  single;   // animated highlight position (list content coords)
       MSwitch:      single;   // animated scoring switch knob (0 off .. 1 on)
+      MVocSwitch:   single;   // same for the vocals switch
       MListReady:   boolean;
       MRowSong:     array of integer;  // song index per drawn row (for the mouse)
       MRowRect:     array of TMRect;   // row rectangles (virtual canvas)
@@ -86,6 +87,7 @@ type
       function ParseMouseModern(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean;
     public
       procedure ToggleScoring;
+      procedure ToggleVocals;
     private
       Equalizer: Tms_Equalizer;
 
@@ -4474,20 +4476,34 @@ begin
     end;
 end;
 
-// 0 = back button, 1 = search pill, 2 = scoring switch
+// 0 = back button, 1 = search pill, 2 = scoring switch, 3 = vocals switch
 function TScreenSong.ModernHeaderRect(Item: integer): TMRect;
+const
+  SW_W = 214;  // switch pill width
 begin
   case Item of
     0: Result := MRect(SB_PAD, 34, 44, 44);
-    1: Result := MRect(MUI_W - SB_PAD - 240 - 12 - 300, 32, 300, 48);
+    1: Result := MRect(MUI_W - SB_PAD - 2 * (SW_W + 12) - 250, 32, 250, 48);
+    3: Result := MRect(MUI_W - SB_PAD - SW_W - 12 - SW_W, 32, SW_W, 48);
   else
-    Result := MRect(MUI_W - SB_PAD - 240, 32, 240, 48);
+    Result := MRect(MUI_W - SB_PAD - SW_W, 32, SW_W, 48);
   end;
 end;
 
 function TScreenSong.ModernSingRect: TMRect;
 begin
   Result := MRect(SB_PAD, SB_BOTTOM - 56, SB_PANEL_W, 56);
+end;
+
+// vocals on = the original song; off = the backing track (#INSTRUMENTAL),
+// for songs that have one. Songs without one always play as they are.
+procedure TScreenSong.ToggleVocals;
+begin
+  if (Ini.VocalsVolume > 50) then
+    Ini.VocalsVolume := 0
+  else
+    Ini.VocalsVolume := 100;
+  Ini.Save;
 end;
 
 procedure TScreenSong.ToggleScoring;
@@ -4560,6 +4576,29 @@ begin
   MIconNote(X + Size / 2, Y + Size / 2, Size * 0.4, mcBorder, 1);
 end;
 
+// a pill with a label, On/Off and an animated switch
+procedure ModernDrawSwitch(const R: TMRect; const Caption: UTF8String; IsOn: boolean; var Anim: single);
+var
+  SwX: single;
+begin
+  MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcSurface, 1);
+  MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
+  MText(R.X + 22, R.Y + 15, Caption, 17, true, mcText, 1);
+  if IsOn then
+  begin
+    MText(R.X + 30 + MTextW(Caption, 17, true), R.Y + 15, 'On', 17, false, mcMuted, 1);
+    Anim := MApproach(Anim, 1, 14);
+  end
+  else
+  begin
+    MText(R.X + 30 + MTextW(Caption, 17, true), R.Y + 15, 'Off', 17, false, mcMuted, 1);
+    Anim := MApproach(Anim, 0, 14);
+  end;
+  SwX := R.X + R.W - 16 - 52;
+  MFillRound(SwX, R.Y + 10, 52, 28, 14, MLerpColor(mcBorder, mcAccent, Anim), 1);
+  MFillCircle(SwX + 14 + 24 * Anim, R.Y + 24, 10, MLerpColor(mcMuted, mcOnAccent, Anim), 1);
+end;
+
 procedure TScreenSong.DrawModern;
 var
   S:          TSong;
@@ -4625,22 +4664,9 @@ begin
     MFillRect(R.X + 48 + TW, R.Y + 13, 2, 22, mcAccent, 1);
   end;
 
-  // scoring switch
-  R := ModernHeaderRect(2);
-  MFillRound(R.X, R.Y, R.W, R.H, R.H / 2, mcSurface, 1);
-  MStrokeRound(R.X, R.Y, R.W, R.H, R.H / 2, 1, mcBorder, 1);
-  MText(R.X + 22, R.Y + 15, 'Scoring', 17, true, mcText, 1);
-  if ScoringOn then
-    MText(R.X + 30 + MTextW('Scoring', 17, true), R.Y + 15, 'On', 17, false, mcMuted, 1)
-  else
-    MText(R.X + 30 + MTextW('Scoring', 17, true), R.Y + 15, 'Off', 17, false, mcMuted, 1);
-  if ScoringOn then
-    MSwitch := MApproach(MSwitch, 1, 14)
-  else
-    MSwitch := MApproach(MSwitch, 0, 14);
-  SwX := R.X + R.W - 16 - 52;
-  MFillRound(SwX, R.Y + 10, 52, 28, 14, MLerpColor(mcBorder, mcAccent, MSwitch), 1);
-  MFillCircle(SwX + 14 + 24 * MSwitch, R.Y + 24, 10, MLerpColor(mcMuted, mcOnAccent, MSwitch), 1);
+  // scoring and vocals switches
+  ModernDrawSwitch(ModernHeaderRect(2), 'Scoring', ScoringOn, MSwitch);
+  ModernDrawSwitch(ModernHeaderRect(3), 'Vocals', Ini.VocalsVolume > 50, MVocSwitch);
 
   { ---------- left panel: selected song ---------- }
   if (VS > 0) and (Interaction >= 0) and (Interaction <= High(CatSongs.Song)) then
@@ -4997,6 +5023,8 @@ begin
           ModernSearchFocus(true)
         else if MHit(VX, VY, ModernHeaderRect(2)) then
           ToggleScoring
+        else if MHit(VX, VY, ModernHeaderRect(3)) then
+          ToggleVocals
         else if MHit(VX, VY, ModernSingRect) then
           Result := ParseInput(SDLK_RETURN, 0, true)
         else if MHit(VX, VY, ModernRailRect) and (CatSongs.VisibleSongs > Theme.Song.ListCover.Rows) then
