@@ -26,6 +26,8 @@ else
   "$VENV/bin/pip" install torch --index-url https://download.pytorch.org/whl/cpu
   "$VENV/bin/pip" install "audio-separator[cpu]"
 fi
+# audioread is imported by audio-separator but not listed as a dependency
+"$VENV/bin/pip" install audioread
 mkdir -p "$VENV/models"
 
 if ! "$VENV/bin/audio-separator" --list_presets 2>/dev/null | grep -q '^karaoke'; then
