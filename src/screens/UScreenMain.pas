@@ -166,8 +166,8 @@ begin
   end;
 
   X := Round(CX + 12 + QS + 22);
-  MText(X, CY + 30, 'Queue songs', 24, true, mcText, 1);
-  MText(X, CY + 60, 'from your phone', 24, true, mcText, 1);
+  MText(X, CY + 30, 'Queue Songs', 24, true, mcText, 1);
+  MText(X, CY + 60, 'From Your Phone', 24, true, mcText, 1);
   MText(X, CY + 104, 'Scan with your camera, or open', 14, false, mcMuted, 1);
   MText(X, CY + 126, Addr, 18, true, mcAccent, 1, mtaLeft, CX + CW - X - 16);
   if (RemoteQueueCount > 0) then
@@ -471,9 +471,9 @@ begin
 
   // footer: scoring status + key hints
   if Boolean(Ini.KaraokeMode) then
-    Status := 'Scoring off'
+    Status := 'Scoring Off'
   else
-    Status := 'Scoring on';
+    Status := 'Scoring On';
   ChipW := MTextW(Status, 15, false) + 44;
   MFillRound(PAD, 650, ChipW, 34, 17, mcSurface, 1);
   if Boolean(Ini.KaraokeMode) then

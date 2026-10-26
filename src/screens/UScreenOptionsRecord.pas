@@ -994,7 +994,7 @@ begin
       MText(R.X + R.W, Y - 2, IntToStr(Round(V * 100)) + '%', 15, true, mcText, 1, mtaRight);
     end
     else
-      MText(R.X + R.W, Y - 2, 'fixed', 15, false, mcMuted, 1, mtaRight);
+      MText(R.X + R.W, Y - 2, 'Fixed', 15, false, mcMuted, 1, mtaRight);
     Exit;
   end;
 
@@ -1024,9 +1024,9 @@ begin
     MFillRect(BX + BW * Peak - 1, Y, 2, 14, mcText, 0.9);
   MFillRect(BX + BW * Thr - 1, Y - 2, 2, 18, mcText, 0.45);
   if (V >= Thr) then
-    MText(R.X + R.W, Y - 2, 'hearing you', 13, true, C, 1, mtaRight)
+    MText(R.X + R.W, Y - 2, 'Hearing you', 13, true, C, 1, mtaRight)
   else
-    MText(R.X + R.W, Y - 2, 'quiet', 13, false, mcMuted, 1, mtaRight);
+    MText(R.X + R.W, Y - 2, 'Quiet', 13, false, mcMuted, 1, mtaRight);
 
   // detected pitch
   Y := R.Y + 32;

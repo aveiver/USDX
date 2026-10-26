@@ -669,13 +669,18 @@ end;
 function MKeyHint(X, Y: single; const Key, Caption: UTF8String): single;
 var
   KW: single;
+  Cap: UTF8String;
 begin
+  // captions always start with a capital ("Back", "Jump to artist")
+  Cap := Caption;
+  if (Cap <> '') and (Cap[1] in ['a'..'z']) then
+    Cap[1] := UpCase(Cap[1]);
   KW := MTextW(Key, 15, true);
   MFillRound(X, Y - 4, KW + 16, 26, 7, mcSurface, 1);
   MStrokeRound(X, Y - 4, KW + 16, 26, 7, 1, mcBorder, 1);
   MText(X + 8, Y, Key, 15, true, mcText, 1);
-  MText(X + KW + 24, Y, Caption, 15, false, mcMuted, 1);
-  Result := KW + 24 + MTextW(Caption, 15, false);
+  MText(X + KW + 24, Y, Cap, 15, false, mcMuted, 1);
+  Result := KW + 24 + MTextW(Cap, 15, false);
 end;
 
 { --- icons --- }

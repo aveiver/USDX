@@ -2118,12 +2118,12 @@ begin
       MText(X, R.Y + 13, Title, 18, true, mcText, 1, mtaLeft, R.W - 520);
       Sub := 'Starting in ' + IntToStr(Trunc(Secs) + 1) + ' s';
       X := R.X + R.W - 22;
-      X := X - MTextW('stay here', 15, false);
-      MText(X, R.Y + 15, 'stay here', 15, false, mcMuted, 1);
+      X := X - MTextW('Stay here', 15, false);
+      MText(X, R.Y + 15, 'Stay here', 15, false, mcMuted, 1);
       X := X - 10 - MTextW('Esc', 15, true) - 16;
       MKeyHint(X, R.Y + 15, 'Esc', '');
-      X := X - 22 - MTextW('start now', 15, false);
-      MText(X, R.Y + 15, 'start now', 15, false, mcMuted, 1);
+      X := X - 22 - MTextW('Start now', 15, false);
+      MText(X, R.Y + 15, 'Start now', 15, false, mcMuted, 1);
       X := X - 10 - MTextW('Enter', 15, true) - 16;
       MKeyHint(X, R.Y + 15, 'Enter', '');
       MText(X - 22, R.Y + 15, Sub, 15, true, mcText, 1, mtaRight);

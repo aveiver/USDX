@@ -4952,8 +4952,8 @@ begin
       Lbl := 'Scan to queue songs';
       if (HX + MTextW(Lbl, 15, true) + 14 < QX) then
       begin
-        MText(QX - 12, 671, 'Scan to queue', 15, true, mcText, 1, mtaRight);
-        MText(QX - 12, 690, 'songs from your phone', 13, false, mcMuted, 1, mtaRight);
+        MText(QX - 12, 671, 'Queue Songs', 15, true, mcText, 1, mtaRight);
+        MText(QX - 12, 690, 'Scan with your phone', 13, false, mcMuted, 1, mtaRight);
       end;
       // white tile with a quiet zone of 2 modules
       MFillRound(QX, QY, QS, QS, 6, MColor($FFFFFF), 1);
