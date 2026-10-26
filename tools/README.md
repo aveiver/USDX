@@ -31,3 +31,17 @@ can stop it and run it again later, because finished songs are skipped:
 * The **Vocals** switch at the top of the song list (next to Scoring) turns
   the original vocals on or off.
 * Songs without a backing track just play normally.
+
+## Keep the backing vocals (best quality, slow)
+
+Removes only the lead singer, using three "karaoke" models combined
+(python-audio-separator). Uses an NVIDIA graphics card if there is one.
+
+    ~/UltraStar/tools/setup-karaoke-remover.sh
+    ~/karaoke-remover/bin/python ~/UltraStar/tools/make-instrumentals.py --keep-backing --limit 1 /home/karaoke/songs
+
+Check the time it prints for that song, then run without `--limit 1`. It
+replaces the plain backing tracks with `... [Karaoke].mp3` versions (the old
+files stay on disk) and shows roughly how long is left after each song.
+`--model mel_band_roformer_karaoke_gabox_v2.ckpt` uses one model instead of
+three, about 3x faster.

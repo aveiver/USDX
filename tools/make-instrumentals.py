@@ -13,10 +13,17 @@ which the game picks up: it plays both tracks in sync and the "Vocals
 Volume" setting (Options > Sound, or the K key while singing) decides how
 much of the original vocals you hear.
 
+With --keep-backing the lead singer only is removed and backing vocals
+stay in, using a combination of three "karaoke" models (python-audio-separator,
+set up by setup-karaoke-remover.sh). Much slower, better result. Those files
+are named "... [Karaoke].mp3" and replace the plain backing track in the .txt
+(the old file stays on disk).
+
 Safe to stop and run again: songs that already have a backing track are
 skipped. Each .txt is backed up before it's changed.
 
     ~/vocal-remover/bin/python make-instrumentals.py /home/karaoke/songs
+    ~/karaoke-remover/bin/python make-instrumentals.py --keep-backing /home/karaoke/songs
     ... --dry-run          list what would be done
     ... --limit 3          only do the first 3 songs (to try it out)
 """
@@ -80,18 +87,66 @@ def separate(python, model, audio, workdir):
     return out
 
 
+def separate_karaoke(python, model, audio, workdir):
+    """Removes the lead vocal only (backing vocals stay); returns the mp3 path.
+
+    model is an audio-separator ensemble preset name ('karaoke') or a single
+    model file name."""
+    # decode with ffmpeg first: handles mp4/m4a and keeps the timing the game uses
+    wav = os.path.join(workdir, 'input.wav')
+    res = subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', audio,
+                          '-vn', '-ac', '2', '-ar', '44100', wav],
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if res.returncode != 0 or not os.path.isfile(wav):
+        raise RuntimeError('ffmpeg could not read the audio: ' +
+                           res.stdout.decode('utf-8', 'replace').strip()[-300:])
+
+    tool = os.path.join(os.path.dirname(python), 'audio-separator')
+    if not os.path.isfile(tool):
+        raise RuntimeError('audio-separator not found next to ' + python +
+                           ' (run setup-karaoke-remover.sh, or pass --python)')
+    out_dir = os.path.join(workdir, 'out')
+    cmd = [tool, wav, '--output_dir', out_dir, '--output_format', 'MP3',
+           '--output_bitrate', '256k',
+           '--model_file_dir', os.path.expanduser('~/karaoke-remover/models'),
+           '--custom_output_names', '{"Instrumental": "instrumental", "Vocals": "lead"}']
+    if model.endswith(('.ckpt', '.onnx', '.pth', '.yaml')):
+        cmd += ['-m', model]
+    else:
+        cmd += ['--ensemble_preset', model]
+    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    found = []
+    for root, _d, files in os.walk(out_dir):
+        found += [os.path.join(root, f) for f in files]
+    for f in found:
+        base = os.path.basename(f).lower()
+        if base.startswith('instrumental.') or '(instrumental)' in base:
+            return f
+    tail = res.stdout.decode('utf-8', 'replace').strip().splitlines()[-8:]
+    raise RuntimeError('audio-separator made no instrumental (got: %s)\n    %s'
+                       % (', '.join(os.path.basename(f) for f in found) or 'nothing',
+                          '\n    '.join(tail)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('songs', help='songs folder, e.g. /home/karaoke/songs')
+    ap.add_argument('--keep-backing', action='store_true',
+                    help='remove only the lead singer, keep backing vocals (slow)')
     ap.add_argument('--python', default=sys.executable,
-                    help='python that has demucs installed (default: this one)')
-    ap.add_argument('--model', default='htdemucs',
-                    help='demucs model (htdemucs = good and quick, htdemucs_ft = best, ~4x slower)')
+                    help='python that has demucs / audio-separator installed (default: this one)')
+    ap.add_argument('--model', default=None,
+                    help='demucs: htdemucs (default) or htdemucs_ft; '
+                         '--keep-backing: karaoke (default, 3-model ensemble) or one model file, '
+                         'e.g. mel_band_roformer_karaoke_gabox_v2.ckpt (about 3x faster)')
     ap.add_argument('--backup', default=os.path.expanduser('~/song-txt-backups'),
                     help='where the original .txt files are copied before changing them')
     ap.add_argument('--limit', type=int, default=0, help='stop after this many songs')
     ap.add_argument('--dry-run', action='store_true', help='only list what would be done')
     args = ap.parse_args()
+    if args.model is None:
+        args.model = 'karaoke' if args.keep_backing else 'htdemucs'
+    suffix = ' [Karaoke].mp3' if args.keep_backing else ' [Instrumental].mp3'
 
     songs_root = os.path.abspath(args.songs)
     todo = []
@@ -105,7 +160,9 @@ def main():
             lines = raw.split(b'\n')
             tags = read_header(lines)
             if 'INSTRUMENTAL' in tags and os.path.isfile(os.path.join(folder, tags['INSTRUMENTAL'][1])):
-                continue
+                # with --keep-backing, plain backing tracks get upgraded
+                if not args.keep_backing or tags['INSTRUMENTAL'][1].endswith(suffix):
+                    continue
             audio_tag = 'AUDIO' if 'AUDIO' in tags else 'MP3' if 'MP3' in tags else None
             if audio_tag is None:
                 continue  # not a song file
@@ -124,13 +181,14 @@ def main():
         return
 
     done = failed = 0
+    run_start = time.time()
     for n, (txt, audio, audio_tag) in enumerate(todo, 1):
         folder = os.path.dirname(txt)
         rel = os.path.relpath(txt, songs_root)
         print('[%d/%d] %s' % (n, len(todo), rel), flush=True)
         started = time.time()
         try:
-            name = safe_stem(os.path.basename(audio)) + ' [Instrumental].mp3'
+            name = safe_stem(os.path.basename(audio)) + suffix
             dest = os.path.join(folder, name)
             # several .txt files (e.g. solo and duet versions) can share one
             # audio file: separate it once and reuse the backing track
@@ -138,7 +196,10 @@ def main():
                 print('    reusing the backing track made for this audio', flush=True)
             else:
                 with tempfile.TemporaryDirectory(prefix='instr-') as work:
-                    made = separate(args.python, args.model, audio, work)
+                    if args.keep_backing:
+                        made = separate_karaoke(args.python, args.model, audio, work)
+                    else:
+                        made = separate(args.python, args.model, audio, work)
                     shutil.move(made, dest)
 
             # back up the .txt, then add the tag under the audio line
@@ -151,7 +212,7 @@ def main():
             lines = raw.split(b'\n')
             tags = read_header(lines)
             eol = b'\r' if lines[0].endswith(b'\r') else b''
-            # drop a stale #INSTRUMENTAL pointing at a missing file
+            # replace an old #INSTRUMENTAL line (missing file, or the plain one)
             if 'INSTRUMENTAL' in tags:
                 del lines[tags['INSTRUMENTAL'][0]]
                 tags = read_header(lines)
@@ -164,7 +225,9 @@ def main():
             shutil.copymode(txt, tmp)
             os.replace(tmp, txt)
             done += 1
-            print('    ok (%ds) -> %s' % (time.time() - started, name), flush=True)
+            left = (time.time() - run_start) / n * (len(todo) - n)
+            print('    ok (%ds) -> %s   [about %dh%02dm to go]'
+                  % (time.time() - started, name, left // 3600, left % 3600 // 60), flush=True)
         except Exception as e:  # keep going with the next song
             failed += 1
             print('    FAILED: %s' % e, flush=True)
