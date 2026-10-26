@@ -131,7 +131,9 @@ def separate_karaoke(python, model, audio, workdir):
         cmd += ['-m', model]
     else:
         cmd += ['--ensemble_preset', model]
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    # let its progress bars (download and separation) show in the terminal
+    cmd += ['--log_level', 'warning']
+    res = subprocess.run(cmd)
     found = []
     for root, _d, files in os.walk(out_dir):
         found += [os.path.join(root, f) for f in files]
@@ -139,10 +141,10 @@ def separate_karaoke(python, model, audio, workdir):
         base = os.path.basename(f).lower()
         if base.startswith('instrumental.') or '(instrumental)' in base:
             return f
-    tail = res.stdout.decode('utf-8', 'replace').strip().splitlines()[-8:]
-    raise RuntimeError('audio-separator made no instrumental (got: %s)\n    %s'
+    raise RuntimeError('audio-separator made no instrumental (got: %s, exit code %d) - '
+                       'see its messages above'
                        % (', '.join(os.path.basename(f) for f in found) or 'nothing',
-                          '\n    '.join(tail)))
+                          res.returncode))
 
 
 def main():

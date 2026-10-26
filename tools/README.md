@@ -44,4 +44,6 @@ Check the time it prints for that song, then run without `--limit 1`. It
 replaces the plain backing tracks with `... [Karaoke].mp3` versions (the old
 files stay on disk) and shows roughly how long is left after each song.
 `--model mel_band_roformer_karaoke_gabox_v2.ckpt` uses one model instead of
-three, about 3x faster.
+three, about 3x faster. On a computer without an NVIDIA card those models are
+very slow (an hour or more per song); `--model UVR_MDXNET_KARA_2.onnx` is a
+much lighter karaoke model that keeps backing vocals and runs fine on a CPU.
