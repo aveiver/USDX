@@ -19,12 +19,15 @@ python3 -m venv "$VENV"
 
 if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
   echo "NVIDIA card found - installing the GPU version"
-  "$VENV/bin/pip" install torch
+  "$VENV/bin/pip" install torch torchvision
   "$VENV/bin/pip" install "audio-separator[gpu]"
 else
   echo "No NVIDIA card - installing the CPU version"
-  "$VENV/bin/pip" install torch --index-url https://download.pytorch.org/whl/cpu
+  "$VENV/bin/pip" install torch torchvision --index-url https://download.pytorch.org/whl/cpu
   "$VENV/bin/pip" install "audio-separator[cpu]"
+  # dependencies can pull a mismatched (CUDA) torchvision from PyPI; put the
+  # matching CPU pair back ("operator torchvision::nms does not exist")
+  "$VENV/bin/pip" install --force-reinstall --no-deps torch torchvision --index-url https://download.pytorch.org/whl/cpu
 fi
 # audioread is imported by audio-separator but not listed as a dependency
 "$VENV/bin/pip" install audioread
