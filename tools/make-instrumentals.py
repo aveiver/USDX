@@ -130,11 +130,16 @@ def main():
         print('[%d/%d] %s' % (n, len(todo), rel), flush=True)
         started = time.time()
         try:
-            with tempfile.TemporaryDirectory(prefix='instr-') as work:
-                made = separate(args.python, args.model, audio, work)
-                name = safe_stem(os.path.basename(audio)) + ' [Instrumental].mp3'
-                dest = os.path.join(folder, name)
-                shutil.move(made, dest)
+            name = safe_stem(os.path.basename(audio)) + ' [Instrumental].mp3'
+            dest = os.path.join(folder, name)
+            # several .txt files (e.g. solo and duet versions) can share one
+            # audio file: separate it once and reuse the backing track
+            if os.path.isfile(dest) and os.path.getmtime(dest) >= os.path.getmtime(audio):
+                print('    reusing the backing track made for this audio', flush=True)
+            else:
+                with tempfile.TemporaryDirectory(prefix='instr-') as work:
+                    made = separate(args.python, args.model, audio, work)
+                    shutil.move(made, dest)
 
             # back up the .txt, then add the tag under the audio line
             bak = os.path.join(args.backup, rel)
