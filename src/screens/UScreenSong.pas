@@ -4573,6 +4573,8 @@ var
   RowBg:      TMColor;
   HX:         single;
   TitleSize:  single;
+  QN, QRow, QCol, QRun: integer;
+  QX, QY, QS, QCell: single;
 begin
   VS := CatSongs.VisibleSongs;
   Rows := Theme.Song.ListCover.Rows;
@@ -4914,15 +4916,39 @@ begin
       HX := HX + MKeyHint(HX, 682, 'Space', 'swap parts') + 22;
     HX := HX + MKeyHint(HX, 682, 'Esc', 'back') + 22;
 
-    // where guests can queue songs from their phones
-    Lbl := RemoteURL;
-    if (Pos('://', Lbl) > 0) then
-      Lbl := Copy(Lbl, Pos('://', Lbl) + 3, Length(Lbl));
-    if (Lbl <> '') then
+    // where guests can queue songs from their phones: a small QR code
+    QN := RemoteQRSize;
+    if (QN > 0) and (RemoteURL <> '') then
     begin
-      Lbl := 'Queue from your phone: ' + Lbl;
-      if (HX + MTextW(Lbl, 15, false) < MUI_W - SB_PAD) then
-        MText(MUI_W - SB_PAD, 682, Lbl, 15, false, mcMuted, 1, mtaRight);
+      QS := 60;
+      QX := MUI_W - SB_PAD - QS;
+      QY := 657;
+      Lbl := 'Scan to queue songs';
+      if (HX + MTextW(Lbl, 15, true) + 14 < QX) then
+      begin
+        MText(QX - 12, 671, 'Scan to queue', 15, true, mcText, 1, mtaRight);
+        MText(QX - 12, 690, 'songs from your phone', 13, false, mcMuted, 1, mtaRight);
+      end;
+      // white tile with a quiet zone of 2 modules
+      MFillRound(QX, QY, QS, QS, 6, MColor($FFFFFF), 1);
+      QCell := QS / (QN + 4);
+      for QRow := 0 to QN - 1 do
+      begin
+        QCol := 0;
+        while (QCol < QN) do
+        begin
+          if RemoteQRDark(QCol, QRow) then
+          begin
+            QRun := QCol;
+            while (QCol < QN) and RemoteQRDark(QCol, QRow) do
+              Inc(QCol);
+            MFillRect(QX + (QRun + 2) * QCell, QY + (QRow + 2) * QCell,
+                      (QCol - QRun) * QCell + 0.3, QCell + 0.3, MColor($000000), 1);
+          end
+          else
+            Inc(QCol);
+        end;
+      end;
     end;
   end;
 
