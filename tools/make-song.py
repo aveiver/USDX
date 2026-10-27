@@ -361,6 +361,15 @@ def main():
         with open(os.path.join(dest, name + '.txt'), 'w', encoding='utf-8') as fh:
             fh.write(txt)
 
+    # same backing track as the rest of the library: lead vocal removed,
+    # backing vocals kept (karaoke model), when that tool is installed
+    kara_py = os.path.expanduser('~/karaoke-remover/bin/python')
+    if os.path.isfile(kara_py):
+        print('Making the backing track with backing vocals kept (karaoke model)...', flush=True)
+        subprocess.run([kara_py, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'make-instrumentals.py'), '--keep-backing', '--model',
+                        'UVR_MDXNET_KARA_2.onnx', dest])
+
     print('\nDone: %s\n%d lines, %d words. Restart the game to find it, sing it once, and fix '
           'any wrong words or timings in the .txt.' % (dest, len(lines), sum(len(l) for l in lines)))
 
