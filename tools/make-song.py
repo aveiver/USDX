@@ -176,7 +176,9 @@ def norm(w):
     return re.sub(r"[^a-z0-9']", '', w.lower())
 
 
-def transcribe(vocals_wav, model_size, language, prompt):
+def transcribe(vocals_audio, model_size, language, prompt):
+    """vocals_audio: float32 mono samples at 16 kHz (decoded by ffmpeg, so
+    faster-whisper's own decoder (PyAV) isn't needed)."""
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -184,7 +186,7 @@ def transcribe(vocals_wav, model_size, language, prompt):
                  '  ~/vocal-remover/bin/pip install faster-whisper')
     print('Finding the words (Whisper %s, first run downloads the model)...' % model_size, flush=True)
     model = WhisperModel(model_size, device='cpu', compute_type='int8')
-    segments, _info = model.transcribe(vocals_wav, language=language, word_timestamps=True,
+    segments, _info = model.transcribe(vocals_audio, language=language, word_timestamps=True,
                                        initial_prompt=prompt, vad_filter=True,
                                        condition_on_previous_text=False)
     lines = []
@@ -325,7 +327,8 @@ def main():
         backing = os.path.join(work, 'htdemucs', 'no_vocals.wav')
 
         prompt = ' '.join(lyric_lines)[:800] if lyric_lines else None
-        heard = transcribe(vocals, args.whisper, None if args.language == 'auto' else args.language, prompt)
+        vocals_audio = load_mono(vocals)
+        heard = transcribe(vocals_audio, args.whisper, None if args.language == 'auto' else args.language, prompt)
         if not heard:
             sys.exit('Whisper found no sung words - is there singing in this file?')
         if lyric_lines:
@@ -336,7 +339,7 @@ def main():
         lines = split_long_lines(lines)
 
         print('Tracking the sung notes...', flush=True)
-        midi = median_filter(track_pitch(load_mono(vocals)))
+        midi = median_filter(track_pitch(vocals_audio))
 
         os.makedirs(dest, exist_ok=True)
         media_name = name + ext
