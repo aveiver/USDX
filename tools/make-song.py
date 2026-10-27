@@ -237,17 +237,59 @@ def align_lyrics(lyric_lines, heard_lines):
     return [l for l in out if l], sum(1 for t in sm.get_matching_blocks() for _ in range(t.size)), len(mine)
 
 
-def split_long_lines(lines, gap=1.2, max_words=10):
+def split_long_lines(lines, gap=1.2, max_words=8, max_chars=38):
+    """Lines that fit on screen: break at pauses, after a sentence ends, and
+    before a line gets too long."""
     out = []
     for line in lines:
         cur = []
         for w in line:
-            if cur and (w[1] - cur[-1][2] > gap or len(cur) >= max_words):
+            chars = sum(len(x[0]) + 1 for x in cur) + len(w[0])
+            ended = cur and cur[-1][0][-1:] in '.!?' and len(cur) >= 3
+            if cur and (w[1] - cur[-1][2] > gap or len(cur) >= max_words
+                        or chars > max_chars or ended):
                 out.append(cur)
                 cur = []
             cur.append(w)
         if cur:
             out.append(cur)
+    # a lone short word at the end of a phrase joins the line before it
+    merged = []
+    for line in out:
+        if (merged and len(line) == 1 and line[0][1] - merged[-1][-1][2] < 0.6
+                and sum(len(x[0]) + 1 for x in merged[-1]) + len(line[0][0]) <= max_chars + 8):
+            merged[-1] = merged[-1] + line
+        else:
+            merged.append(line)
+    return merged
+
+
+def snap_onsets(lines, midi, max_back=0.4):
+    """Whisper tends to put sung word starts a little late; move each word's
+    start back to where the singing actually begins (voiced pitch frames),
+    never before the previous word ends."""
+    fr = HOP / SR
+    prev_end = 0.0
+    out = []
+    for line in lines:
+        nl = []
+        for (w, t0, t1) in line:
+            i = int(t0 / fr)
+            limit = max(int((prev_end + 0.02) / fr), int((t0 - max_back) / fr), 0)
+            if 0 <= i < len(midi):
+                # start from the first voiced frame at/after t0 (within 100 ms)
+                j = i
+                while j < min(len(midi), i + 10) and np.isnan(midi[j]):
+                    j += 1
+                if j < len(midi) and not np.isnan(midi[j]):
+                    while j - 1 >= limit and not np.isnan(midi[j - 1]):
+                        j -= 1
+                    # pitch frames cover 64 ms from their start: use the middle
+                    if j < i:
+                        t0 = min(t0, j * fr + 0.032)
+            nl.append((w, t0, max(t1, t0 + BEAT)))
+            prev_end = max(t0, t1)
+        out.append(nl)
     return out
 
 
@@ -297,6 +339,7 @@ def main():
     ap.add_argument('--songs', default='/home/karaoke/songs', help='songs folder to write into')
     ap.add_argument('--whisper', default='medium',
                     help='Whisper model: small (fast), medium (default), large-v3 (best, slow)')
+    ap.add_argument('--force', action='store_true', help='remake the .txt of a song made before')
     ap.add_argument('--language', default='en', help="sung language, e.g. en (or 'auto')")
     args = ap.parse_args()
 
@@ -305,8 +348,8 @@ def main():
         sys.exit('No such file: ' + media)
     name = re.sub(r'[\\/:*?"<>|]+', '', '%s - %s' % (args.artist, args.title)).strip()
     dest = os.path.join(args.songs, name)
-    if os.path.exists(os.path.join(dest, name + '.txt')):
-        sys.exit('%s already exists - move it away first if you want to make it again.' % dest)
+    if os.path.exists(os.path.join(dest, name + '.txt')) and not args.force:
+        sys.exit('%s already exists - add --force to make its .txt again.' % dest)
     ext = os.path.splitext(media)[1].lower()
     video = ext in ('.mp4', '.mkv', '.webm', '.mov', '.avi', '.m4v')
 
@@ -340,6 +383,7 @@ def main():
 
         print('Tracking the sung notes...', flush=True)
         midi = median_filter(track_pitch(vocals_audio))
+        lines = snap_onsets(lines, midi)
 
         os.makedirs(dest, exist_ok=True)
         media_name = name + ext
