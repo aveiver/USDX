@@ -47,3 +47,21 @@ files stay on disk) and shows roughly how long is left after each song.
 three, about 3x faster. On a computer without an NVIDIA card those models are
 very slow (an hour or more per song); `--model UVR_MDXNET_KARA_2.onnx` is a
 much lighter karaoke model that keeps backing vocals and runs fine on a CPU.
+
+## Make a song from your own audio / video file
+
+For songs you have no UltraStar .txt for. Separates the vocals, finds when
+each word is sung (Whisper, runs locally) and tracks the notes, then writes a
+song folder (media, .txt, cover, backing track) into the songs folder.
+
+Setup once:
+
+    ~/vocal-remover/bin/pip install faster-whisper
+
+Then:
+
+    ~/vocal-remover/bin/python ~/UltraStar/tools/make-song.py "Artist - Title.mp4" --artist "Artist" --title "Title"
+
+Add `--lyrics lyrics.txt` (one sung line per line) to use your own text and
+line breaks; Whisper then only does the timing. Sing it once and fix anything
+odd in the .txt.
