@@ -264,7 +264,7 @@ def split_long_lines(lines, gap=1.2, max_words=8, max_chars=38):
     return merged
 
 
-def snap_onsets(lines, midi, max_back=0.4):
+def snap_onsets(lines, midi, max_back=0.3):
     """Whisper tends to put sung word starts a little late; move each word's
     start back to where the singing actually begins (voiced pitch frames),
     never before the previous word ends."""
@@ -284,8 +284,11 @@ def snap_onsets(lines, midi, max_back=0.4):
                 if j < len(midi) and not np.isnan(midi[j]):
                     while j - 1 >= limit and not np.isnan(midi[j - 1]):
                         j -= 1
+                    # only move to a clear start: a short silence must come
+                    # right before it (continuous sound = no reliable onset)
+                    clear = j - 3 >= 0 and j - 1 >= limit and np.all(np.isnan(midi[j - 3:j]))
                     # pitch frames cover 64 ms from their start: use the middle
-                    if j < i:
+                    if clear and j < i:
                         t0 = min(t0, j * fr + 0.032)
             nl.append((w, t0, max(t1, t0 + BEAT)))
             prev_end = max(t0, t1)
@@ -339,6 +342,10 @@ def main():
     ap.add_argument('--songs', default='/home/karaoke/songs', help='songs folder to write into')
     ap.add_argument('--whisper', default='medium',
                     help='Whisper model: small (fast), medium (default), large-v3 (best, slow)')
+    ap.add_argument('--no-snap', action='store_true',
+                    help="use Whisper's word starts as they are (don't move them to the sung onset)")
+    ap.add_argument('--offset', type=int, default=0,
+                    help='move all lyrics by this many ms (negative = earlier), e.g. --offset -150')
     ap.add_argument('--force', action='store_true', help='remake the .txt of a song made before')
     ap.add_argument('--language', default='en', help="sung language, e.g. en (or 'auto')")
     args = ap.parse_args()
@@ -383,7 +390,11 @@ def main():
 
         print('Tracking the sung notes...', flush=True)
         midi = median_filter(track_pitch(vocals_audio))
-        lines = snap_onsets(lines, midi)
+        if not args.no_snap:
+            lines = snap_onsets(lines, midi)
+        if args.offset:
+            lines = [[(w, max(0.0, a + args.offset / 1000.0), max(0.0, b + args.offset / 1000.0))
+                      for (w, a, b) in l] for l in lines]
 
         os.makedirs(dest, exist_ok=True)
         media_name = name + ext
@@ -407,6 +418,12 @@ def main():
         txt = build_txt(lines, midi, args.artist, args.title, media_name, cover, instrumental, video)
         with open(os.path.join(dest, name + '.txt'), 'w', encoding='utf-8') as fh:
             fh.write(txt)
+        # the words on their own, one line per sung line: fix any wrong words
+        # here and run again with --lyrics this file --force
+        words_file = os.path.join(dest, 'words.txt')
+        if not args.lyrics or os.path.abspath(args.lyrics) != os.path.abspath(words_file):
+            with open(words_file, 'w', encoding='utf-8') as fh:
+                fh.write('\n'.join(' '.join(w for w, _a, _b in l) for l in lines) + '\n')
 
     # same backing track as the rest of the library: lead vocal removed,
     # backing vocals kept (karaoke model), when that tool is installed
@@ -417,6 +434,8 @@ def main():
                         'make-instrumentals.py'), '--keep-backing', '--model',
                         'UVR_MDXNET_KARA_2.onnx', dest])
 
+    print('\nWords file: %s\n  (fix wrong words there, then run again with --lyrics "that file" --force)'
+          % os.path.join(dest, 'words.txt'))
     print('\nDone: %s\n%d lines, %d words. Restart the game to find it, sing it once, and fix '
           'any wrong words or timings in the .txt.' % (dest, len(lines), sum(len(l) for l in lines)))
 
