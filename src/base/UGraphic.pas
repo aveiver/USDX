@@ -318,6 +318,16 @@ procedure OnWindowMoved(x,y: integer);
 procedure OnWindowResized(w,h: integer);
 procedure CalculateScreenMetrics();
 
+// ui-v2: keeps ScreenW/H equal to the real drawable size (pixels). Fixes the
+// picture filling only a corner when the window grew to a bigger display
+// (e.g. a 4K TV) without a resize event, or on a scaled (HiDPI) desktop.
+procedure SyncDrawableSize;
+
+var
+  // drawable pixels per window unit; mouse positions are multiplied by these
+  WinScaleX: single = 1;
+  WinScaleY: single = 1;
+
 
 implementation
 
@@ -900,6 +910,36 @@ begin
   if Mode = Mode_Windowed then Mode := CurrentWindowMode;
   SetVideoMode(CurrentWindowMode xor Mode);
   Result := CurrentWindowMode;
+end;
+
+procedure SDL_GL_GetDrawableSize(window: PSDL_Window; w, h: PInt); cdecl; external SDL_LibName;
+
+procedure SyncDrawableSize;
+var
+  DW, DH, WW, WH: integer;
+begin
+  if (screen = nil) then
+    Exit;
+  DW := 0; DH := 0; WW := 0; WH := 0;
+  SDL_GL_GetDrawableSize(screen, @DW, @DH);
+  SDL_GetWindowSize(screen, @WW, @WH);
+  if (DW <= 0) or (DH <= 0) or (WW <= 0) or (WH <= 0) then
+    Exit;
+  WinScaleX := DW / WW;
+  WinScaleY := DH / WH;
+  if (DW <> ScreenW) or (DH <> ScreenH) then
+  begin
+    Log.LogStatus(Format('Drawable size %dx%d (window %dx%d), was rendering %dx%d',
+      [DW, DH, WW, WH, ScreenW, ScreenH]), 'SyncDrawableSize');
+    ScreenW := DW;
+    ScreenH := DH;
+    CalculateScreenMetrics;
+    if CurrentWindowMode = Mode_Fullscreen then
+    begin
+      Screen.W := ScreenW;
+      Screen.H := ScreenH;
+    end;
+  end;
 end;
 
 procedure OnWindowMoved(x,y: integer);

@@ -321,6 +321,9 @@ begin
       // keyboard/mouse/joystick events
       CheckEvents;
 
+      // ui-v2: render at the window's real pixel size
+      SyncDrawableSize;
+
       // display
       Done := not Display.Draw;
       Renderer.SwapBuffers;
@@ -446,6 +449,13 @@ begin
               Event.button.x := longint(mouseX);
               Event.button.y := longint(mouseY);
             end;
+          end;
+
+          // ui-v2: window units -> drawable pixels (scaled desktops)
+          if (WinScaleX <> 1) or (WinScaleY <> 1) then
+          begin
+            Event.button.x := Round(Event.button.x * WinScaleX);
+            Event.button.y := Round(Event.button.y * WinScaleY);
           end;
 
           if UpdateMouse then
