@@ -32,6 +32,7 @@ type
     Key:    UTF8String;
     Title:  UTF8String;
     Artist: UTF8String;
+    By:     UTF8String;   // name of the person who asked for it ('' if none)
   end;
 
 // re-reads the shared files (at most once a second; cheap to call every frame)
@@ -142,7 +143,7 @@ end;
 // splits one queue line on tabs (no quoting, unlike TStringList)
 function SplitLine(const Line: UTF8String; out Item: TRemoteItem): boolean;
 var
-  Fields: array[0..3] of UTF8String;
+  Fields: array[0..4] of UTF8String;
   I, N, Start: integer;
 begin
   N := 0;
@@ -150,7 +151,7 @@ begin
   for I := 1 to Length(Line) + 1 do
     if (I > Length(Line)) or (Line[I] = #9) then
     begin
-      if (N <= 3) then
+      if (N <= 4) then
         Fields[N] := Copy(Line, Start, I - Start);
       Inc(N);
       Start := I + 1;
@@ -162,6 +163,10 @@ begin
     Item.Key := Fields[1];
     Item.Title := Fields[2];
     Item.Artist := Fields[3];
+    if (N >= 5) then
+      Item.By := Fields[4]
+    else
+      Item.By := '';
   end;
 end;
 
@@ -278,6 +283,7 @@ begin
   Result.Key := '';
   Result.Title := '';
   Result.Artist := '';
+  Result.By := '';
 end;
 
 function RemoteURL: UTF8String;

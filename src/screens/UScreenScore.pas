@@ -2115,6 +2115,8 @@ begin
       MText(R.X + 22, R.Y + 16, 'UP NEXT', 13, true, mcAccent, 1);
       X := R.X + 22 + MTextW('UP NEXT', 13, true) + 14;
       Title := RemoteQueueItem(0).Title + '  -  ' + RemoteQueueItem(0).Artist;
+      if (RemoteQueueItem(0).By <> '') then
+        Title := Title + '   |   Requested by ' + RemoteQueueItem(0).By;
       MText(X, R.Y + 13, Title, 18, true, mcText, 1, mtaLeft, R.W - 520);
       Sub := 'Starting in ' + IntToStr(Trunc(Secs) + 1) + ' s';
       X := R.X + R.W - 22;
@@ -2222,6 +2224,14 @@ begin
 
     MText(CX, Y + CovS + 26, S.Title, 40, true, mcText, 1, mtaCenter, MUI_W - 160);
     MText(CX, Y + CovS + 80, S.Artist, 22, false, mcMuted, 1, mtaCenter, MUI_W - 160);
+
+    // who asked for it (name typed on their phone)
+    Lbl := RemoteQueueItem(0).By;
+    if (Lbl <> '') then
+    begin
+      MText(CX, Y + CovS + 118, 'Requested by ' + Lbl, 20, true, mcAccent, 1, mtaCenter, MUI_W - 160);
+      Y := Y + 34;
+    end;
 
     // countdown bar
     BarW := 420;

@@ -77,6 +77,9 @@ dialog { background: var(--surface); color: var(--text); border: 1px solid var(-
 dialog::backdrop { background: rgba(0,0,0,.6); }
 dialog h2 { margin: 0 0 6px; font-size: 22px; }
 dialog p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+dialog input.name-in { letter-spacing: 0; font-size: 20px; }
+.by { color: var(--accent); }
+.link { background: none; border: 0; color: var(--accent); font: inherit; padding: 0 0 0 6px; text-decoration: underline; }
 dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 22px; letter-spacing: .3em; text-align: center; }
 .row { display: flex; gap: 10px; margin-top: 16px; }
 .btn { flex: 1; height: 48px; border-radius: 999px; border: 0; font-weight: 700; font-size: 16px; }
@@ -116,6 +119,18 @@ dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="nameDlg">
+  <form method="dialog" id="nameForm">
+    <h2>What's your name?</h2>
+    <p>It's shown on the TV when your song is up next.</p>
+    <input id="nameIn" class="name-in" autocomplete="nickname" maxlength="24" aria-label="Your name" placeholder="Your name">
+    <div class="row">
+      <button class="btn ghost" value="cancel" type="button" id="nameCancel">Cancel</button>
+      <button class="btn primary" type="submit">Add song</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="hostDlg">
   <form method="dialog" id="hostForm">
@@ -248,9 +263,35 @@ dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid
     });
   }
 
+  /* ---- who's asking: a name, remembered on this phone ---- */
+  function getName() {
+    try { return (localStorage.getItem('kq_name') || '').trim(); } catch (e) { return ''; }
+  }
+  function setName(n) {
+    try { localStorage.setItem('kq_name', n); } catch (e) {}
+  }
+  var pendingSong = null;
+  function askName(song) {
+    pendingSong = song;
+    $('nameIn').value = getName();
+    $('nameDlg').showModal();
+    $('nameIn').focus();
+  }
+  $('nameCancel').onclick = function () { pendingSong = null; $('nameDlg').close(); };
+  $('nameForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var n = $('nameIn').value.trim().slice(0, 24);
+    if (!n) { $('nameIn').focus(); return; }
+    setName(n);
+    $('nameDlg').close();
+    updateFoot();
+    if (pendingSong) { var s = pendingSong; pendingSong = null; addSong(s); }
+  });
+
   function addSong(s, row) {
     if (queuedIds[s.id]) { toast('Already in the queue'); return; }
-    api('POST', '/api/queue', { id: s.id }).then(function (j) {
+    if (!getName()) { askName(s); return; }
+    api('POST', '/api/queue', { id: s.id, name: getName() }).then(function (j) {
       toast(j.position === 1 && !state.now ? 'Added - it\'s up next!' : 'Added - number ' + j.position + ' in the queue');
       refresh();
     }).catch(function (e) { toast(e.message, true); });
@@ -302,7 +343,9 @@ dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid
       var title = el('div', 'qtitle', item.title);
       if (item.mine) title.appendChild(el('span', 'mine', 'YOUR PICK'));
       t.appendChild(title);
-      t.appendChild(el('div', 'qartist', item.artist));
+      var art = el('div', 'qartist', item.artist);
+      if (item.by) { art.appendChild(document.createTextNode(' \u00b7 ')); art.appendChild(el('span', 'by', item.by)); }
+      t.appendChild(art);
       r.appendChild(t);
       if (state.host) {
         if (i > 0) r.appendChild(iconBtn(UP, 'Move up', function () { move(item, -1); }));
@@ -354,6 +397,15 @@ dialog input { width: 100%; height: 50px; border-radius: 14px; border: 1px solid
       var b = el('button', '', 'Host controls');
       b.onclick = function () { $('pin').value = ''; $('hostDlg').showModal(); $('pin').focus(); };
       f.appendChild(b);
+    }
+    // the name shown on the TV, changeable
+    if (getName()) {
+      var nm = el('div', '', 'Your name: ');
+      nm.appendChild(el('span', 'by', getName()));
+      var ch = el('button', 'link', 'Change');
+      ch.onclick = function () { askName(null); };
+      nm.appendChild(ch);
+      f.appendChild(nm);
     }
   }
 

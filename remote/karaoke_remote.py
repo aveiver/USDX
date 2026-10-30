@@ -94,12 +94,15 @@ class Store:
                     if len(parts) >= 4:
                         self.queue.append({'qid': parts[0], 'key': parts[1], 'title': parts[2],
                                            'artist': parts[3], 'guest': '', 'added': time.time(),
+                                           'name': parts[4] if len(parts) >= 5 else '',
                                            'id': self._song_id(parts[1])})
         except OSError:
             pass
 
     def save_queue(self):
-        lines = ['%s\t%s\t%s\t%s\n' % (q['qid'], q['key'], clean(q['title']), clean(q['artist']))
+        # 5th column: the name of the person who asked for it (shown on the TV)
+        lines = ['%s\t%s\t%s\t%s\t%s\n' % (q['qid'], q['key'], clean(q['title']), clean(q['artist']),
+                                          clean(q.get('name', '')))
                  for q in self.queue]
         atomic_write(self.path('queue.txt'), ''.join(lines))
 
@@ -178,7 +181,7 @@ class Store:
 
     # -- queue operations ---------------------------------------------------
 
-    def add(self, song_id, guest):
+    def add(self, song_id, guest, name=''):
         with self.lock:
             song = self.by_id.get(song_id)
             if not song:
@@ -187,7 +190,7 @@ class Store:
                 return None, 'Already in the queue'
             item = {'qid': secrets.token_hex(4), 'id': song['id'], 'key': song['key'],
                     'title': song['title'], 'artist': song['artist'], 'guest': guest,
-                    'added': time.time()}
+                    'name': name, 'added': time.time()}
             self.queue.append(item)
             self.save_queue()
             return item, None
@@ -385,7 +388,7 @@ class Handler(BaseHTTPRequestHandler):
             st.refresh_songs()
             with st.lock:
                 queue = [{'qid': q['qid'], 'id': q['id'], 'title': q['title'], 'artist': q['artist'],
-                          'mine': q['guest'] == guest} for q in st.queue]
+                          'by': q.get('name', ''), 'mine': q['guest'] == guest} for q in st.queue]
             self.send_json({'now': st.now_playing(), 'queue': queue, 'host': host,
                             'songs': len(st.songs)},
                            set_cookies=self.guest_cookie(new_guest))
@@ -406,7 +409,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if p == '/api/queue':
             st.refresh_songs()
-            item, err = st.add(str(body.get('id', '')), guest)
+            name = clean(body.get('name', ''))[:24]
+            item, err = st.add(str(body.get('id', '')), guest, name)
             if err:
                 self.send_json({'error': err}, 400, cookies)
             else:
