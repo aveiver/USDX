@@ -287,6 +287,10 @@ def publish_address(store, port):
 class Handler(BaseHTTPRequestHandler):
     store = None
     server_version = 'KaraokeQueue/1.0'
+    # a phone that drops off the Wi-Fi or locks mid-request must not hold a
+    # connection (and a thread) open forever - over a long party those pile
+    # up until no new connection can be accepted
+    timeout = 15
 
     def log_message(self, fmt, *args):   # keep the terminal quiet
         pass
@@ -449,9 +453,23 @@ def background(store, port):
             if tick % 60 == 0:
                 publish_address(store, port)
         except Exception as e:  # keep serving whatever happens
-            print('background:', e, file=sys.stderr)
+            print(time.strftime('%H:%M:%S'), 'background:', e, file=sys.stderr, flush=True)
         tick += 1
         time.sleep(0.5)
+
+
+class QueueServer(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 64
+
+    def handle_error(self, request, client_address):
+        # one bad request (phone gone mid-answer etc.) is logged briefly, not fatal
+        etype, value = sys.exc_info()[:2]
+        if etype in (BrokenPipeError, ConnectionResetError, TimeoutError, socket.timeout):
+            return
+        print('%s request error from %s: %s: %s' % (time.strftime('%H:%M:%S'), client_address[0],
+                                                      etype.__name__ if etype else '?', value),
+              file=sys.stderr, flush=True)
 
 
 def main():
@@ -471,7 +489,7 @@ def main():
     httpd = None
     for port in ([args.port] if args.port else [80, 8080]):
         try:
-            httpd = ThreadingHTTPServer(('0.0.0.0', port), Handler)
+            httpd = QueueServer(('0.0.0.0', port), Handler)
             break
         except PermissionError:
             continue
@@ -481,7 +499,8 @@ def main():
 
     url = publish_address(store, port)
     threading.Thread(target=background, args=(store, port), daemon=True).start()
-    print('Karaoke queue on %s  (host PIN %s, in %s)' % (url, store.pin, store.path('pin.txt')), flush=True)
+    print('%s Karaoke queue on %s  (host PIN %s, in %s)' % (time.strftime('%Y-%m-%d %H:%M:%S'),
+          url, store.pin, store.path('pin.txt')), flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

@@ -9,9 +9,11 @@ DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 mkdir -p "$DIR/game/remote"
 # (re)start the queue server so a git pull or a changed public-url.txt
 # always takes effect
+pkill -f "remote/run-queue.sh" >/dev/null 2>&1
 pkill -f "remote/karaoke_remote.py" >/dev/null 2>&1 && sleep 1
-nohup python3 "$DIR/remote/karaoke_remote.py" --dir "$DIR/game/remote" \
-  >"$DIR/game/remote/server.log" 2>&1 &
+# run-queue.sh restarts the server if it ever stops; the log is kept
+# (appended) so a problem during a party can be looked at afterwards
+nohup "$DIR/remote/run-queue.sh" "$DIR/game/remote" >/dev/null 2>&1 &
 
 cd "$DIR/game"
 exec ./ultrastardx "$@"
